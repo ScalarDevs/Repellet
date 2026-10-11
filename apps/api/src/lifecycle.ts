@@ -39,6 +39,49 @@ export async function limits() {
   if (!row) throw new Error('Installation not initialized');
   return row.limits;
 }
+function activeProjectLimitError(
+  limit: number,
+  activeProjects: Array<{
+    id: string;
+    name: string;
+    ownerId: string;
+    state: typeof projects.$inferSelect.state;
+  }>,
+) {
+  return Object.assign(new Error('Active project limit reached. Pause another project first.'), {
+    statusCode: 409,
+    code: 'active-project-limit',
+    limit,
+    activeProjects,
+  });
+}
+export async function ensureProjectCapacity(id: string) {
+  const [project] = await db
+    .select({ id: projects.id, ownerId: projects.ownerId })
+    .from(projects)
+    .where(eq(projects.id, id));
+  if (!project) throw Object.assign(new Error('Project not found'), { statusCode: 404 });
+  const currentLimits = await limits();
+  const active = await db
+    .select({
+      id: projects.id,
+      name: projects.name,
+      ownerId: projects.ownerId,
+      state: projects.state,
+    })
+    .from(projects)
+    .where(
+      and(
+        eq(projects.ownerId, project.ownerId),
+        inArray(projects.state, ['building', 'starting', 'running']),
+      ),
+    );
+  if (active.filter((p) => p.id !== id).length >= currentLimits.maxActiveProjects)
+    throw activeProjectLimitError(
+      currentLimits.maxActiveProjects,
+      active.filter((p) => p.id !== id),
+    );
+}
 export async function setState(
   id: string,
   state: typeof projects.$inferSelect.state,
@@ -93,7 +136,12 @@ export async function ensureProject(
     await db.transaction(async (tx) => {
       await tx.execute(`SELECT pg_advisory_xact_lock(hashtext('${project.ownerId}'))`);
       const active = await tx
-        .select({ id: projects.id })
+        .select({
+          id: projects.id,
+          name: projects.name,
+          ownerId: projects.ownerId,
+          state: projects.state,
+        })
         .from(projects)
         .where(
           and(
@@ -102,9 +150,9 @@ export async function ensureProject(
           ),
         );
       if (active.filter((p) => p.id !== id).length >= currentLimits.maxActiveProjects)
-        throw Object.assign(
-          new Error('Active project limit reached. Stop another project first.'),
-          { statusCode: 409 },
+        throw activeProjectLimitError(
+          currentLimits.maxActiveProjects,
+          active.filter((p) => p.id !== id),
         );
       await tx
         .update(projects)
@@ -201,6 +249,37 @@ export async function stopProject(id: string) {
   await cancelProjectWork(id);
   return serialize(id, () => stopProjectWithinOperation(id));
 }
+export async function pauseProject(id: string) {
+  await cancelProjectWork(id);
+  return serialize(id, () => pauseProjectWithinOperation(id));
+}
+export async function pauseProjectWithinOperation(id: string) {
+  const [current] = await db
+    .select({ state: projects.state })
+    .from(projects)
+    .where(eq(projects.id, id));
+  if (!current) throw Object.assign(new Error('Project not found'), { statusCode: 404 });
+  if (current.state === 'paused') return { state: 'paused' as const };
+  try {
+    await flushProject(id);
+  } catch (e) {
+    if ((e as { statusCode?: number }).statusCode !== 409) throw e;
+  }
+  await setState(id, 'stopping');
+  await closeDocuments(id);
+  watchers.get(id)?.close();
+  closeProject(id);
+  try {
+    await workerJson(`/projects/${id}/pause`, 'POST');
+    await finishWorkspaceProcesses(id);
+    const database = await databaseRecord(id);
+    if (database && database.status !== 'deleting') await setDatabaseState(id, 'stopped');
+    await setState(id, 'paused');
+  } catch (e) {
+    await setState(id, 'failed', (e as Error).message);
+    throw e;
+  }
+}
 // Caller must hold the project's operation lock. Public stop cancels before waiting for it.
 export async function stopProjectWithinOperation(id: string) {
   try {
@@ -283,7 +362,7 @@ export async function reconcile() {
           });
       } else {
         await finishWorkspaceProcesses(p.id);
-        if (p.state !== 'stopped')
+        if (p.state !== 'stopped' && p.state !== 'paused')
           await setState(
             p.id,
             state.oomKilled ? 'failed' : 'stopped',
@@ -358,8 +437,10 @@ export async function monitor() {
         const agent = await workerJson<{ executing: boolean }>(`/projects/${p.id}/agent/activity`);
         if (hasClients(p.id) || agent.executing)
           await db.update(projects).set({ lastActiveAt: new Date() }).where(eq(projects.id, p.id));
-        else if (Date.now() - p.lastActiveAt.getTime() > currentLimits.idleMinutes * 60000)
-          await stopProject(p.id);
+        else if (Date.now() - p.lastActiveAt.getTime() > currentLimits.idleMinutes * 60000) {
+          await pauseProject(p.id);
+          continue;
+        }
         if (!watchers.has(p.id)) await watch(p.id);
       } catch (e) {
         console.error('Workspace monitoring failed', p.id, (e as Error).message);

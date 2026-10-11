@@ -23,9 +23,11 @@ export function WorkspaceStartScreen({
       <h2>
         {project.state === 'failed'
           ? 'The workspace needs attention'
-          : project.state === 'stopped'
-            ? 'Workspace is stopped'
-            : 'Preparing your environment'}
+          : project.state === 'paused'
+            ? 'Workspace is paused'
+            : project.state === 'stopped'
+              ? 'Workspace is stopped'
+              : 'Preparing your environment'}
       </h2>
       <p className="muted">
         {project.error || `${project.runtimes.join(' + ')} · Your files stay on your server`}
@@ -40,7 +42,7 @@ export function WorkspaceStartScreen({
         />
       ) : (
         <Button variant="primary" icon={<Play size={14} />} onClick={onStart}>
-          Start workspace
+          {project.state === 'paused' ? 'Restore workspace' : 'Start workspace'}
         </Button>
       )}
       {logError && (

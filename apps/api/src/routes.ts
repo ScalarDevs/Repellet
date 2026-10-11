@@ -50,7 +50,9 @@ import {
 import { bridge, workerJson, workerRequest } from './worker.js';
 import {
   ensureProject,
+  ensureProjectCapacity,
   stopProject,
+  pauseProject,
   stopProjectWithinOperation,
   serialize,
   limits,
@@ -82,6 +84,17 @@ export function idFrom(req: FastifyRequest) {
 }
 export async function access(req: FastifyRequest, mode: 'view' | 'edit' | 'manage' = 'view') {
   return projectAccess(await requireUser(req), idFrom(req), mode);
+}
+async function pauseTarget(req: FastifyRequest) {
+  const user = await requireUser(req);
+  const id = idFrom(req);
+  const [project] = await db.select().from(projects).where(eq(projects.id, id));
+  if (!project) throw Object.assign(new Error('Project not found'), { statusCode: 404 });
+  if (!user.isOwner && project.ownerId !== user.id)
+    throw Object.assign(new Error('Only the project owner or site owner may pause it'), {
+      statusCode: 403,
+    });
+  return project;
 }
 const viewProject = async (
   p: typeof projects.$inferSelect & { role?: string; ownerName?: string },
@@ -421,14 +434,33 @@ export async function routes(app: FastifyInstance) {
     return { ok: true };
   });
   app.post('/api/projects/:id/open', async (req, reply) => {
-    const p = await access(req);
+    const user = await requireUser(req);
+    const p = await projectAccess(user, idFrom(req));
     const owner = await db.select().from(users).where(eq(users.id, p.ownerId));
     if (!owner[0]?.enabled)
       throw Object.assign(new Error('Project owner account is disabled'), { statusCode: 403 });
+    try {
+      await ensureProjectCapacity(p.id);
+    } catch (error) {
+      const e = error as Error & {
+        code?: string;
+        activeProjects?: Array<{ ownerId: string }>;
+      };
+      if (e.code === 'active-project-limit' && e.activeProjects)
+        e.activeProjects = e.activeProjects.filter(
+          (candidate) => user.isOwner || candidate.ownerId === user.id,
+        );
+      throw error;
+    }
     void ensureProject(p.id)
       .then(() => (p.preparation.status === 'pending' ? prepareProject(p.id) : undefined))
       .catch((e) => req.log.error(e));
     return reply.code(202).send({ ok: true });
+  });
+  app.post('/api/projects/:id/pause', async (req) => {
+    const p = await pauseTarget(req);
+    await pauseProject(p.id);
+    return { ok: true };
   });
   app.post('/api/projects/:id/stop', async (req) => {
     const p = await access(req, 'edit');

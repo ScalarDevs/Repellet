@@ -106,6 +106,7 @@ import {
   databaseSpecSchema,
   databaseUrl,
   stopDatabase,
+  pauseDatabase,
   removeDatabase,
 } from '../apps/worker/src/databases.js';
 const id = '11111111-1111-4111-8111-111111111111';
@@ -163,6 +164,16 @@ it('keeps the volume across stops/restarts and refuses to silently replace missi
   );
   expect(state.creates).toHaveLength(count);
 });
+it('pauses by removing the database container and network while retaining the volume', async () => {
+  await ensureDatabase(id, spec, 'workspace');
+  await pauseDatabase(id);
+  expect(state.container).toBe(null);
+  expect(state.network).toBe(false);
+  expect(state.volume).toBe(true);
+  await ensureDatabase(id, { ...spec, initialize: false }, 'workspace');
+  expect(state.volume).toBe(true);
+  expect(state.network).toBe(true);
+});
 it('retains partial deletion for retry and removes the network only after the volume', async () => {
   await ensureDatabase(id, spec, 'workspace');
   state.volumeError = true;
@@ -186,6 +197,17 @@ it('does not attach a different database identity and keeps startup failures rec
   await vi.runAllTimersAsync();
   await assertion;
   expect(state.volume).toBe(true);
+});
+it('rolls back newly-created database resources after provisioning failure', async () => {
+  state.execFailure = true;
+  vi.useFakeTimers();
+  const failed = ensureDatabase(id, spec, 'workspace');
+  const assertion = expect(failed).rejects.toMatchObject({ statusCode: 503 });
+  await vi.runAllTimersAsync();
+  await assertion;
+  expect(state.volume).toBe(false);
+  expect(state.network).toBe(false);
+  expect(state.container).toBe(null);
 });
 it('initializes MongoDB with a project-scoped app role without exposing credentials in commands', async () => {
   const mongo = { ...spec, type: 'mongodb' as const, image: 'mongo:8.0' as const };
