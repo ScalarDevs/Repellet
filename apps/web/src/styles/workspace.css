@@ -233,6 +233,9 @@
   align-items: center;
   flex-wrap: wrap;
 }
+.preview-toolbar {
+  justify-content: flex-end;
+}
 .pane-menu .dropdown {
   top: calc(100% + var(--space-0-5));
 }

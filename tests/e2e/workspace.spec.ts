@@ -169,7 +169,7 @@ test('owner setup, IDE workflows, private previews, collaboration, and viewers',
     .poll(() => page.locator('.retained-editor:visible .yRemoteSelectionHead').count())
     .toBeGreaterThan(0);
   // Each collaborator restores only their own tabs and panels.
-  await other.getByRole('button', { name: 'Toggle preview', exact: true }).click();
+  await other.getByRole('button', { name: 'Toggle right panel', exact: true }).click();
   await other.reload();
   await expect(other.locator('.editor-tab.active')).toContainText('notes.txt');
   await expect(other.locator('.preview-pane')).toHaveCount(0);
@@ -560,7 +560,7 @@ for (const starter of [
         .first()
         .click();
       await expect(page.locator('.editor-tab.active')).toContainText('one.ts');
-      await page.getByRole('button', { name: 'Toggle preview', exact: true }).click();
+      await page.getByRole('button', { name: 'Toggle right panel', exact: true }).click();
       await page.reload();
       await expect(page.locator('.editor-tab.active')).toContainText('one.ts');
       await expect(page.locator('.preview-pane')).toHaveCount(0);

@@ -7,6 +7,7 @@ import {
   TerminalSquare,
   Bot,
   Database,
+  AppWindow,
 } from 'lucide-react';
 const tools = [
   ['files', 'Files', Files],
@@ -18,30 +19,30 @@ export function ActivityBar({
   pane,
   showSidebar,
   showTerminal,
-  showPreview,
+  showRightPanel,
+  rightPanel,
   onPane,
   onToggleTerminal,
-  onTogglePreview,
+  onToggleRightPanel,
+  onPreview,
   agentOwner = false,
-  agentActive = false,
   onAgent,
   databaseAllowed = false,
-  databaseActive = false,
   onDatabase,
 }: {
   databaseAllowed?: boolean;
-  databaseActive?: boolean;
   onDatabase?: () => void;
   agentOwner?: boolean;
-  agentActive?: boolean;
   onAgent?: () => void;
+  onPreview?: () => void;
   pane: string;
   showSidebar: boolean;
   showTerminal: boolean;
-  showPreview: boolean;
+  showRightPanel: boolean;
+  rightPanel: 'preview' | 'agent' | 'database';
   onPane: (name: string) => void;
   onToggleTerminal: () => void;
-  onTogglePreview: () => void;
+  onToggleRightPanel: () => void;
 }) {
   return (
     <nav className="activity-bar" aria-label="Workspace tools">
@@ -64,8 +65,8 @@ export function ActivityBar({
         <button
           aria-label="Agent"
           title="Agent"
-          aria-pressed={agentActive}
-          className={agentActive ? 'active' : ''}
+          aria-pressed={showRightPanel && rightPanel === 'agent'}
+          className={showRightPanel && rightPanel === 'agent' ? 'active' : ''}
           onClick={onAgent}
         >
           <Bot size={19} />
@@ -81,23 +82,32 @@ export function ActivityBar({
       >
         <TerminalSquare size={19} />
       </button>
+      <button
+        aria-label="Preview"
+        title="Preview"
+        aria-pressed={showRightPanel && rightPanel === 'preview'}
+        className={showRightPanel && rightPanel === 'preview' ? 'active-subtle' : ''}
+        onClick={onPreview}
+      >
+        <AppWindow size={19} />
+      </button>
       {databaseAllowed && (
         <button
           aria-label="Database"
           title="Database"
-          aria-pressed={databaseActive}
-          className={databaseActive ? 'active-subtle' : ''}
+          aria-pressed={showRightPanel && rightPanel === 'database'}
+          className={showRightPanel && rightPanel === 'database' ? 'active-subtle' : ''}
           onClick={onDatabase}
         >
           <Database size={19} />
         </button>
       )}
       <button
-        aria-pressed={showPreview}
-        aria-label="Toggle preview"
-        title="Toggle preview"
-        className={showPreview ? 'active-subtle' : ''}
-        onClick={onTogglePreview}
+        aria-pressed={showRightPanel}
+        aria-label="Toggle right panel"
+        title="Toggle right panel"
+        className={showRightPanel ? 'active-subtle' : ''}
+        onClick={onToggleRightPanel}
       >
         <PanelRight size={19} />
       </button>

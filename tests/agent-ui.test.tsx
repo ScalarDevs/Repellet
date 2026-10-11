@@ -434,10 +434,12 @@ it('hides Agent controls from editors and viewers and exposes them only with str
     pane: 'files',
     showSidebar: true,
     showTerminal: false,
-    showPreview: true,
+    showRightPanel: true,
+    rightPanel: 'preview' as const,
     onPane: vi.fn(),
-    onTogglePreview: vi.fn(),
+    onToggleRightPanel: vi.fn(),
     onToggleTerminal: vi.fn(),
+    onPreview: vi.fn(),
   };
   const view = render(<ActivityBar {...props} agentOwner={false} />);
   expect(screen.queryByRole('button', { name: 'Agent', exact: true })).toBeNull();

@@ -134,7 +134,6 @@ export function Workspace({
   const [rightPanel, setRightPanel] = useState<'preview' | 'agent' | 'database'>(
     saved.rightPanel || 'preview',
   );
-  const [databaseOpen, setDatabaseOpen] = useState(saved.databaseOpen === true);
   const [lastFixedRightPanel, setLastFixedRightPanel] = useState<'preview' | 'agent'>(
     saved.lastFixedRightPanel || (saved.rightPanel === 'agent' ? 'agent' : 'preview'),
   );
@@ -144,15 +143,27 @@ export function Workspace({
   }, [rightPanel]);
   const [agentThread, setAgentThread] = useState(saved.agentThread || '');
   const [agentVisited, setAgentVisited] = useState(saved.rightPanel === 'agent');
+  const [databaseVisited, setDatabaseVisited] = useState(
+    saved.rightPanel === 'database' || saved.databaseOpen === true,
+  );
   useEffect(() => {
     if (rightPanel === 'agent') setAgentVisited(true);
+    if (rightPanel === 'database') setDatabaseVisited(true);
   }, [rightPanel]);
   const selectedRightPanel =
-    rightPanel === 'database' && databaseOpen && editable
+    rightPanel === 'database' && editable
       ? 'database'
       : rightPanel === 'agent' && agentOwner
         ? 'agent'
         : 'preview';
+  function selectRightPanel(panel: 'preview' | 'agent' | 'database') {
+    if (layout.showPreview && selectedRightPanel === panel) {
+      layout.setShowPreview(false);
+      return;
+    }
+    setRightPanel(panel);
+    layout.setShowPreview(true);
+  }
   const [quickOpen, setQuickOpen] = useState(false);
   const [settings, setSettings] = useState(false);
   const [peers, setPeers] = useState<{ id: string; name: string }[]>([]);
@@ -229,7 +240,7 @@ export function Workspace({
       showPreview: layout.showPreview,
       rightPanel: selectedRightPanel,
       agentThread,
-      databaseOpen,
+      databaseOpen: databaseVisited || selectedRightPanel === 'database',
       lastFixedRightPanel,
       bottomPanelTab,
       showTerminal: layout.showTerminal,
@@ -247,7 +258,7 @@ export function Workspace({
     layout.showSidebar,
     layout.showPreview,
     selectedRightPanel,
-    databaseOpen,
+    databaseVisited,
     lastFixedRightPanel,
     agentThread,
     bottomPanelTab,
@@ -435,30 +446,16 @@ export function Workspace({
                 pane={layout.pane}
                 showSidebar={layout.showSidebar}
                 showTerminal={layout.showTerminal}
-                showPreview={layout.showPreview}
+                showRightPanel={layout.showPreview}
+                rightPanel={selectedRightPanel}
                 onPane={layout.selectPane}
                 onToggleTerminal={() => layout.setShowTerminal(!layout.showTerminal)}
-                onTogglePreview={() => {
-                  setRightPanel('preview');
-                  layout.setShowPreview(
-                    selectedRightPanel === 'preview' ? !layout.showPreview : true,
-                  );
-                }}
+                onToggleRightPanel={() => layout.setShowPreview(!layout.showPreview)}
+                onPreview={() => selectRightPanel('preview')}
                 databaseAllowed={editable}
-                databaseActive={layout.showPreview && selectedRightPanel === 'database'}
-                onDatabase={() => {
-                  setDatabaseOpen(true);
-                  setRightPanel('database');
-                  layout.setShowPreview(true);
-                }}
+                onDatabase={() => selectRightPanel('database')}
                 agentOwner={agentOwner}
-                agentActive={layout.showPreview && selectedRightPanel === 'agent'}
-                onAgent={() => {
-                  setRightPanel('agent');
-                  layout.setShowPreview(
-                    selectedRightPanel === 'agent' ? !layout.showPreview : true,
-                  );
-                }}
+                onAgent={() => selectRightPanel('agent')}
               />
               <aside
                 className="explorer"
@@ -567,17 +564,18 @@ export function Workspace({
                         className="workspace-right-panel"
                         style={{ width: dimensions.preview }}
                       >
-                        {(agentOwner || (databaseOpen && editable)) && (
+                        {(agentOwner || editable) && (
                           <Tabs
                             label="Workspace right panel"
                             value={selectedRightPanel}
-                            onChange={setRightPanel}
+                            onChange={(panel) => {
+                              setRightPanel(panel);
+                              layout.setShowPreview(true);
+                            }}
                             items={[
                               { id: 'preview', label: 'Preview' },
                               ...(agentOwner ? [{ id: 'agent' as const, label: 'Agent' }] : []),
-                              ...(databaseOpen && editable
-                                ? [{ id: 'database' as const, label: 'Database' }]
-                                : []),
+                              ...(editable ? [{ id: 'database' as const, label: 'Database' }] : []),
                             ]}
                           />
                         )}
@@ -591,6 +589,7 @@ export function Workspace({
                             width={dimensions.preview}
                             revision={previewRevision}
                             editable={editable}
+                            showTitle={!(agentOwner || editable)}
                             onRefresh={() => setPreviewRevision((v) => v + 1)}
                             onClose={() => layout.setShowPreview(false)}
                             onRetryReadiness={() =>
@@ -598,7 +597,7 @@ export function Workspace({
                             }
                           />
                         </div>
-                        {databaseOpen && editable && (
+                        {editable && databaseVisited && (
                           <div
                             className="workspace-right-content"
                             hidden={selectedRightPanel !== 'database'}
@@ -608,15 +607,7 @@ export function Workspace({
                               projectId={id}
                               owner={agentOwner}
                               revision={databaseRevision}
-                              onClose={() => {
-                                setDatabaseOpen(false);
-                                if (rightPanel === 'database')
-                                  setRightPanel(
-                                    lastFixedRightPanel === 'agent' && agentOwner
-                                      ? 'agent'
-                                      : 'preview',
-                                  );
-                              }}
+                              onClose={() => layout.setShowPreview(false)}
                             />
                           </div>
                         )}

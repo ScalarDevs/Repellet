@@ -222,7 +222,7 @@ export function DatabasePanel({
           disabled={busy}
           onClick={() => void run(async () => {}, true)}
         />
-        <IconButton label="Close Database tab" icon={<X size={16} />} onClick={onClose} />
+        <IconButton label="Close right panel" icon={<X size={16} />} onClick={onClose} />
       </header>
       {error && (
         <p role="alert" className="field-error">

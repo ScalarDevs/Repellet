@@ -7,6 +7,7 @@ export function PreviewPanel({
   width,
   revision,
   editable,
+  showTitle = true,
   onRefresh,
   onClose,
   onRetryReadiness,
@@ -16,35 +17,43 @@ export function PreviewPanel({
   width: number;
   revision: number;
   editable: boolean;
+  showTitle?: boolean;
   onRefresh: () => void;
   onClose: () => void;
   onRetryReadiness: () => void;
 }) {
   const { appStatus } = project;
   const available = !!url && appStatus.status === 'available';
+  const actions = (
+    <>
+      <IconButton
+        size="sm"
+        label="Refresh preview"
+        icon={<RefreshCw size={13} />}
+        onClick={onRefresh}
+      />
+      <IconButton
+        size="sm"
+        label="Open preview in new tab"
+        icon={<ExternalLink size={13} />}
+        onClick={() => window.open(url, '_blank', 'noopener')}
+        disabled={!url}
+      />
+      <IconButton
+        size="sm"
+        label="Close right panel"
+        icon={<X size={14} />}
+        onClick={onClose}
+      />
+    </>
+  );
   return (
     <aside className="preview-pane" style={{ width }}>
-      <PaneHeader
-        title="Preview"
-        actions={
-          <>
-            <IconButton
-              size="sm"
-              label="Refresh preview"
-              icon={<RefreshCw size={13} />}
-              onClick={onRefresh}
-            />
-            <IconButton
-              size="sm"
-              label="Open preview in new tab"
-              icon={<ExternalLink size={13} />}
-              onClick={() => window.open(url, '_blank', 'noopener')}
-              disabled={!url}
-            />
-            <IconButton size="sm" label="Close preview" icon={<X size={14} />} onClick={onClose} />
-          </>
-        }
-      />
+      {showTitle ? (
+        <PaneHeader title="Preview" actions={actions} />
+      ) : (
+        <div className="pane-header preview-toolbar">{actions}</div>
+      )}
       <div className="preview-url">
         <span
           className={`preview-availability ${available ? 'available' : ''}`}
