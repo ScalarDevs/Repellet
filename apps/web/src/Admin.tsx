@@ -20,6 +20,7 @@ import {
   Status,
   Spinner,
   LoadError,
+  EmptyState,
   Button,
   IconButton,
   Field,
@@ -102,6 +103,7 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
         title: 'Disable account?',
         description: 'This revokes all sessions and live connections. Project files are retained.',
         confirm: true,
+        danger: true,
       }))
     )
       return;
@@ -128,163 +130,198 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
           { id: 'projects', label: 'All projects', icon: Box },
           { id: 'agent-apis', label: 'Agent APIs', icon: KeyRound },
         ]}
-      />
-      <TabPanel>
-        {tab === 'agent-apis' && <AdminAgentApi />}
-        {loadError && <LoadError message={loadError} onRetry={load} />}
-        {loading && <Spinner />}
-        {!loading && tab === 'people' && (
-          <Section
-            title={`People (${users.length})`}
-            description="Accounts are created here. There’s no public registration or email invitation."
-            actions={
-              <Button
-                variant="primary"
-                icon={<UserPlus size={15} />}
-                onClick={() => {
-                  dialogVersion.current++;
-                  setCreateErrors({});
-                  setCreating(true);
+      >
+        <TabPanel>
+          {tab === 'agent-apis' ? (
+            <AdminAgentApi />
+          ) : (
+            <>
+              {loadError && <LoadError message={loadError} onRetry={load} />}
+              {loading && <Spinner label="Loading administration…" />}
+            </>
+          )}
+          {!loading && tab === 'people' && (
+            <Section
+              title={`People (${users.length})`}
+              description="Accounts are created here. There’s no public registration or email invitation."
+              actions={
+                <Button
+                  variant="primary"
+                  icon={<UserPlus size={15} />}
+                  onClick={() => {
+                    dialogVersion.current++;
+                    setCreateErrors({});
+                    setCreating(true);
+                  }}
+                >
+                  Add person
+                </Button>
+              }
+            >
+              {users.length ? (
+                <div className="list">
+                  {users.map((user) => (
+                    <div className="list-row" key={user.id}>
+                      <Avatar name={user.displayName} size={34} />
+                      <div className="list-row-main">
+                        <strong className="truncate" title={user.displayName}>
+                          {user.displayName}
+                        </strong>
+                        <small className="truncate" title={user.username}>
+                          @{user.username}
+                        </small>
+                      </div>
+                      <span className="role-label">
+                        {user.isOwner ? 'Owner' : user.enabled ? 'Member' : 'Disabled'}
+                      </span>
+                      <div className="list-row-actions">
+                        <IconButton
+                          label={`Reset password for ${user.displayName}`}
+                          icon={<KeyRound size={15} />}
+                          onClick={() => resetPassword(user)}
+                        />
+                        {!user.isOwner && (
+                          <IconButton
+                            label={`${user.enabled ? 'Disable' : 'Enable'} ${user.displayName}`}
+                            icon={user.enabled ? <UserX size={16} /> : <UserCheck size={16} />}
+                            onClick={() => toggleUser(user)}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  title="No people yet"
+                  description="Add a person to create an account on this server."
+                />
+              )}
+            </Section>
+          )}
+          {!loading &&
+            tab === 'resources' &&
+            (limits ? (
+              <form
+                className="resource-form"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const submittedLimits = { ...limits };
+                  void run(async () => {
+                    await put('/admin/settings', { limits: submittedLimits });
+                    ui.notify('Resource limits updated.', 'success');
+                  });
                 }}
               >
-                Add person
-              </Button>
-            }
-          >
-            <div className="list">
-              {users.map((user) => (
-                <div className="list-row" key={user.id}>
-                  <Avatar name={user.displayName} size={34} />
-                  <div className="list-row-main">
-                    <strong className="truncate" title={user.displayName}>
-                      {user.displayName}
-                    </strong>
-                    <small className="truncate" title={user.username}>
-                      @{user.username}
-                    </small>
+                <Section
+                  title="Workspace limits"
+                  description="Defaults apply to all projects and update running containers."
+                >
+                  <p className="section-help">
+                    CPU and memory are enforced by Docker. Storage is measured periodically, so
+                    terminal writes can briefly exceed it; over-limit projects suspend execution but
+                    stay available for cleanup.
+                  </p>
+                  <FormRow columns={2}>
+                    {limitFields.map(([key, label, min, max, step]) => (
+                      <Field key={key} label={label}>
+                        <input
+                          type="number"
+                          required
+                          min={min}
+                          max={max}
+                          step={step}
+                          value={limits[key]}
+                          onChange={(e) =>
+                            setLimits((v) => ({ ...v!, [key]: Number(e.target.value) }))
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </FormRow>
+                  <div className="form-actions start">
+                    <Button type="submit" variant="primary" busy={busy} icon={<Save size={15} />}>
+                      Save limits
+                    </Button>
                   </div>
-                  <span className="role-label">
-                    {user.isOwner ? 'Owner' : user.enabled ? 'Member' : 'Disabled'}
-                  </span>
-                  <div className="list-row-actions">
-                    <IconButton
-                      label={`Reset password for ${user.displayName}`}
-                      icon={<KeyRound size={15} />}
-                      onClick={() => resetPassword(user)}
-                    />
-                    {!user.isOwner && (
-                      <IconButton
-                        label={`${user.enabled ? 'Disable' : 'Enable'} ${user.displayName}`}
-                        icon={user.enabled ? <UserX size={16} /> : <UserCheck size={16} />}
-                        onClick={() => toggleUser(user)}
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
-        {!loading &&
-          tab === 'resources' &&
-          (limits ? (
-            <form
-              className="resource-form"
-              onSubmit={(e) => {
-                e.preventDefault();
-                const submittedLimits = { ...limits };
-                void run(async () => {
-                  await put('/admin/settings', { limits: submittedLimits });
-                  ui.notify('Resource limits updated.', 'success');
-                });
-              }}
+                </Section>
+              </form>
+            ) : loadError ? null : (
+              <Spinner />
+            ))}
+          {!loading && tab === 'projects' && (
+            <Section
+              title={`All projects (${projects.length})`}
+              description="Every project on this server, including ones you aren’t a member of."
             >
-              <Section
-                title="Workspace limits"
-                description="Defaults apply to all projects and update running containers. CPU and memory are enforced by Docker. Storage is measured periodically, so terminal writes can briefly exceed it; over-limit projects suspend execution but stay available for cleanup."
-              >
-                <FormRow columns={2}>
-                  {limitFields.map(([key, label, min, max, step]) => (
-                    <Field key={key} label={label}>
-                      <input
-                        type="number"
-                        required
-                        min={min}
-                        max={max}
-                        step={step}
-                        value={limits[key]}
-                        onChange={(e) =>
-                          setLimits((v) => ({ ...v!, [key]: Number(e.target.value) }))
+              {projects.length ? (
+                <div className="list">
+                  {projects.map((p) => (
+                    <div className="list-row" key={p.id}>
+                      <button
+                        className="project-name list-row-main"
+                        disabled={!p.canOpen}
+                        onClick={() => onOpen(p.id)}
+                      >
+                        <span className="project-icon">
+                          <Box size={17} />
+                        </span>
+                        <span className="project-text">
+                          <strong className="truncate" title={p.name}>
+                            {p.name}
+                          </strong>
+                          <small className="truncate" title={p.ownerName}>
+                            {p.ownerName}
+                          </small>
+                        </span>
+                      </button>
+                      <Status
+                        state={
+                          p.state === 'paused' ? 'paused' : p.running === true ? 'running' : 'idle'
                         }
                       />
-                    </Field>
+                      <span className="admin-storage">{formatBytes(p.storageBytes)}</span>
+                      <div className="list-row-actions admin-stop">
+                        {p.state === 'running' && (
+                          <Button
+                            size="sm"
+                            icon={<Square size={11} />}
+                            onClick={async () => {
+                              if (
+                                !(await ui.ask({
+                                  title: 'Stop workspace?',
+                                  description:
+                                    'This stops terminals and running apps. Files are kept.',
+                                  confirm: true,
+                                  danger: true,
+                                }))
+                              )
+                                return;
+                              try {
+                                await post(`/admin/projects/${p.id}/stop`);
+                                await load();
+                              } catch (e) {
+                                ui.notify(errorMessage(e));
+                              }
+                            }}
+                          >
+                            Stop workspace
+                          </Button>
+                        )}
+                      </div>
+                    </div>
                   ))}
-                </FormRow>
-                <div className="form-actions start">
-                  <Button type="submit" variant="primary" busy={busy} icon={<Save size={15} />}>
-                    Save limits
-                  </Button>
                 </div>
-              </Section>
-            </form>
-          ) : loadError ? null : (
-            <Spinner />
-          ))}
-        {!loading && tab === 'projects' && (
-          <Section
-            title={`All projects (${projects.length})`}
-            description="Every project on this server, including ones you aren’t a member of."
-          >
-            <div className="list">
-              {projects.map((p) => (
-                <div className="list-row" key={p.id}>
-                  <button
-                    className="project-name list-row-main"
-                    disabled={!p.canOpen}
-                    onClick={() => onOpen(p.id)}
-                  >
-                    <span className="project-icon">
-                      <Box size={17} />
-                    </span>
-                    <span className="project-text">
-                      <strong className="truncate" title={p.name}>
-                        {p.name}
-                      </strong>
-                      <small className="truncate" title={p.ownerName}>
-                        {p.ownerName}
-                      </small>
-                    </span>
-                  </button>
-                  <Status
-                    state={
-                      p.state === 'paused' ? 'paused' : p.running === true ? 'running' : 'idle'
-                    }
-                  />
-                  <span className="admin-storage">{formatBytes(p.storageBytes)}</span>
-                  <div className="list-row-actions admin-stop">
-                    {p.state === 'running' && (
-                      <Button
-                        size="sm"
-                        icon={<Square size={11} />}
-                        onClick={async () => {
-                          try {
-                            await post(`/admin/projects/${p.id}/stop`);
-                            await load();
-                          } catch (e) {
-                            ui.notify(errorMessage(e));
-                          }
-                        }}
-                      >
-                        Stop workspace
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </Section>
-        )}
-      </TabPanel>
+              ) : (
+                <EmptyState
+                  title="No projects yet"
+                  description="Projects created on this server will appear here."
+                />
+              )}
+            </Section>
+          )}
+        </TabPanel>
+      </Tabs>
       {creating && (
         <Modal title="Add a person" onClose={closeCreate} small>
           <form

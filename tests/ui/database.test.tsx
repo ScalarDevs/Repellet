@@ -72,7 +72,7 @@ it('provides engine selection only to owners and closes without deleting a datab
   await waitFor(() =>
     expect(post).toHaveBeenCalledWith('/projects/project/database', { type: 'mongodb' }),
   );
-  fireEvent.click(screen.getByLabelText('Close Database tab'));
+  fireEvent.click(screen.getByLabelText('Close right panel'));
   expect(onClose).toHaveBeenCalled();
   expect(remove).not.toHaveBeenCalled();
 });
@@ -413,7 +413,7 @@ it('retries failed reads without leaving a loading spinner or enabling paginatio
     return retry.promise;
   });
   panel();
-  expect((await screen.findByRole('alert')).textContent).toBe('Could not read records');
+  expect((await screen.findByRole('alert')).textContent).toContain('Could not read records');
   expect(screen.queryByText('Loading records…')).toBeNull();
   expect((screen.getByRole('button', { name: 'Next' }) as HTMLButtonElement).disabled).toBe(true);
   fireEvent.click(screen.getByRole('button', { name: 'Retry records' }));

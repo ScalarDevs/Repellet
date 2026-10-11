@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import * as monaco from 'monaco-editor';
 import { modelUri, languageStates } from './language';
 import type { OpenFileDiagnostic } from '@repellet/shared';
-import { PaneHeader } from './ui';
+import { EmptyState, PaneHeader } from './ui';
 const severity = (s: number) => (s === 8 ? 'error' : s === 4 ? 'warning' : 'info');
 export function Problems({
   projectId,
@@ -77,7 +77,13 @@ export function Problems({
           </section>
         ) : null;
       })}
-      {!diagnostics.length && <p className="pane-empty-text">No problems in open files.</p>}
+      {!diagnostics.length && (
+        <EmptyState
+          className="pane-empty"
+          title="No problems"
+          description="No problems in open files."
+        />
+      )}
       <p className="pane-footnote">
         Only open files are checked. Use the terminal for full-project lint and type checks.
       </p>

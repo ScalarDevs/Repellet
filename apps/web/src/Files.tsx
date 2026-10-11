@@ -27,6 +27,7 @@ import {
   Menu,
   MenuButton,
   MenuItem,
+  EmptyState,
   LoadError,
   PaneHeader,
   IconButton,
@@ -209,7 +210,7 @@ export function FileTree({
           expandedRef.current = next;
           setExpanded(next);
           void load(target);
-        }, 1500);
+        }, 500);
     }
     return true;
   }
@@ -321,7 +322,7 @@ export function FileTree({
         if (operationProject.current !== project) break;
         const { path, file } = entries[i];
         const destination = joinPath(target, path);
-        setProgress(`Uploading ${i + 1} of ${entries.length}…`);
+        setProgress(`Uploading ${i + 1}/${entries.length}…`);
         try {
           if (file) {
             if (file.size > 8 * 1024 * 1024) throw new Error('uploads are limited to 8 MiB.');
@@ -462,19 +463,27 @@ export function FileTree({
       ? selected
       : selected.split('/').slice(0, -1).join('/')
     : '';
-  async function create(kind: 'file' | 'directory') {
+  function createDirectory(path: string) {
+    const entry = Object.values(children)
+      .flat()
+      .find((e) => e.path === path);
+    if (!path) return '';
+    if (entry?.kind === 'directory') return path;
+    return parentPath(path);
+  }
+  async function create(kind: 'file' | 'directory', at = directory) {
     if (!editable || mutation.current) return;
     const name = await ui.ask({
       title: kind === 'file' ? 'New file' : 'New folder',
       label: 'Workspace path',
-      value: directory ? directory + '/' : '',
+      value: at ? at + '/' : '',
     });
     if (!name || mutation.current) return;
     mutation.current = true;
     setBusy(true);
     try {
       await post(`/projects/${projectId}/files/create`, { path: name, kind });
-      await load(directory);
+      await load(at);
       if (kind === 'file') onOpen(name);
     } catch (e) {
       ui.notify(errorMessage(e));
@@ -647,6 +656,7 @@ export function FileTree({
           if (e.target === e.currentTarget) {
             e.preventDefault();
             setSelected('');
+            setMenu({ path: '', x: e.clientX, y: e.clientY });
           }
         }}
       >
@@ -656,6 +666,12 @@ export function FileTree({
           onClick={() => setSelected('')}
           onDragOver={(event) => dragOver(event, '')}
           onDrop={(event) => drop(event, '')}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            e.currentTarget.focus();
+            setSelected('');
+            setMenu({ path: '', x: e.clientX, y: e.clientY });
+          }}
         >
           <Folder size={15} />
           <span>Workspace root</span>
@@ -663,18 +679,22 @@ export function FileTree({
         {errors[''] ? (
           <LoadError message={errors['']!} onRetry={() => load()} />
         ) : loading ? (
-          <Spinner />
+          <Spinner label="Loading files…" />
         ) : children['']?.length ? (
           rows('')
         ) : (
-          <div className="tree-empty">
-            No files yet.
-            {editable && (
-              <Button disabled={busy} variant="link" size="sm" onClick={() => create('file')}>
-                Create a file
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            className="pane-empty"
+            title="No files yet"
+            description="Create a file to start editing in this workspace."
+            action={
+              editable ? (
+                <Button disabled={busy} variant="primary" size="sm" onClick={() => create('file')}>
+                  Create a file
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       </div>
       <div
@@ -714,23 +734,51 @@ export function FileTree({
             className="context-menu"
             style={{
               left: Math.min(menu.x, window.innerWidth - 200),
-              top: Math.min(menu.y, window.innerHeight - 160),
+              top: Math.min(menu.y, window.innerHeight - 200),
             }}
           >
-            <button
-              onClick={() => {
-                window.open(
-                  `/api/projects/${projectId}/files/download?path=${encodeURIComponent(menu.path)}`,
-                  '_blank',
-                  'noopener',
-                );
-                setMenu(null);
-              }}
-            >
-              <Download size={14} />
-              Download
-            </button>
             {editable && (
+              <>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    const at = createDirectory(menu.path);
+                    setMenu(null);
+                    void create('file', at);
+                  }}
+                >
+                  <FilePlus2 size={14} />
+                  New file
+                </button>
+                <button
+                  disabled={busy}
+                  onClick={() => {
+                    const at = createDirectory(menu.path);
+                    setMenu(null);
+                    void create('directory', at);
+                  }}
+                >
+                  <FolderPlus size={14} />
+                  New folder
+                </button>
+              </>
+            )}
+            {menu.path !== '' && (
+              <button
+                onClick={() => {
+                  window.open(
+                    `/api/projects/${projectId}/files/download?path=${encodeURIComponent(menu.path)}`,
+                    '_blank',
+                    'noopener',
+                  );
+                  setMenu(null);
+                }}
+              >
+                <Download size={14} />
+                Download
+              </button>
+            )}
+            {editable && menu.path !== '' && (
               <>
                 <button
                   disabled={busy}
@@ -935,7 +983,7 @@ export function SearchPane({
       </form>
       {error && <LoadError message={error} onRetry={() => search()} />}
       {busy ? (
-        <Spinner />
+        <Spinner label="Searching…" />
       ) : (
         submitted === query && (
           <div className="search-results">
@@ -951,6 +999,13 @@ export function SearchPane({
                 <code>{m.text}</code>
               </button>
             ))}
+            {!matches.length && (
+              <EmptyState
+                className="pane-empty"
+                title="No matches"
+                description="Try a different search term."
+              />
+            )}
           </div>
         )
       )}

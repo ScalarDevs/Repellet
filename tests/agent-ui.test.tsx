@@ -3,7 +3,7 @@ import { beforeEach, it, expect, vi } from 'vitest';
 import { render, renderHook, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { useState } from 'react';
 import { randomUUID } from 'node:crypto';
-import { AgentPanel, AgentItem } from '../apps/web/src/AgentPanel';
+import { AgentPanel, AgentItem, AgentTranscriptItems } from '../apps/web/src/AgentPanel';
 import { useAgentAttachments } from '../apps/web/src/AgentAttachments';
 import { agentTranscript } from '../apps/web/src/agentTranscript';
 import { groupAgentTools } from '../apps/web/src/agentTranscript';
@@ -180,7 +180,7 @@ it('keeps Provider default explicit even when latest Sol is last in the model li
       : original(path),
   );
   await mountPanel();
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   await screen.findByRole('option', { name: 'gpt-6.1-sol' });
   expect((screen.getByLabelText('Agent model') as HTMLSelectElement).value).toBe('');
   fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
@@ -396,7 +396,7 @@ it('keeps attachment drafts associated with their thread through navigation', as
   );
 });
 
-it('toggles plan mode from the composer outside Run settings and restores its state after navigation', async () => {
+it('toggles plan mode from the composer outside Model and restores its state after navigation', async () => {
   await mountPanel();
   const button = screen.getByRole('button', { name: 'Plan mode', exact: true });
   expect(button.getAttribute('aria-pressed')).toBe('false');
@@ -434,10 +434,12 @@ it('hides Agent controls from editors and viewers and exposes them only with str
     pane: 'files',
     showSidebar: true,
     showTerminal: false,
-    showPreview: true,
+    showRightPanel: true,
+    rightPanel: 'preview' as const,
     onPane: vi.fn(),
-    onTogglePreview: vi.fn(),
+    onToggleRightPanel: vi.fn(),
     onToggleTerminal: vi.fn(),
+    onPreview: vi.fn(),
   };
   const view = render(<ActivityBar {...props} agentOwner={false} />);
   expect(screen.queryByRole('button', { name: 'Agent', exact: true })).toBeNull();
@@ -553,6 +555,100 @@ it('collapses only runs of more than three tools while preserving every tool ent
   expect(
     groups.flatMap((group) => (group.type === 'tools' ? group.entries : [group.entry])),
   ).toEqual(entries);
+});
+
+it('keeps a tool-run disclosure choice when later transcript renders change status', async () => {
+  const entries = (status: 'inProgress' | 'completed' | 'failed', marker = '') =>
+    ['one', 'two', 'three', 'four'].map((id) => ({
+      key: id,
+      turnId: 'turn',
+      item: {
+        type: 'dynamicToolCall' as const,
+        id,
+        namespace: null,
+        tool: 'exec',
+        arguments: { marker },
+        status,
+        contentItems: marker ? [{ type: 'inputText' as const, text: marker }] : null,
+        success: status === 'failed' ? false : null,
+        durationMs: null,
+      },
+    }));
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  const untouched = render(
+    <AgentTranscriptItems items={entries('completed')} onOpenFile={vi.fn()} />,
+  );
+  const untouchedDetails = () =>
+    untouched.container.querySelector('details.agent-tool-run') as HTMLDetailsElement;
+  expect(untouchedDetails().open).toBe(false);
+  untouched.rerender(<AgentTranscriptItems items={entries('inProgress')} onOpenFile={vi.fn()} />);
+  await settle();
+  expect(untouchedDetails().open).toBe(true);
+  untouched.rerender(
+    <AgentTranscriptItems items={entries('completed', 'settled')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(untouchedDetails().open).toBe(true);
+  untouched.unmount();
+
+  const view = render(<AgentTranscriptItems items={entries('completed')} onOpenFile={vi.fn()} />);
+  const details = () =>
+    view.container.querySelector('details.agent-tool-run') as HTMLDetailsElement;
+  expect(details().open).toBe(false);
+  fireEvent.click(details().querySelector('summary')!);
+  await settle();
+  expect(details().open).toBe(true);
+  view.rerender(
+    <AgentTranscriptItems items={entries('completed', 'still done')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(details().open).toBe(true);
+  view.rerender(<AgentTranscriptItems items={entries('inProgress')} onOpenFile={vi.fn()} />);
+  view.rerender(
+    <AgentTranscriptItems items={entries('completed', 'streamed')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(details().open).toBe(true);
+
+  view.rerender(
+    <AgentTranscriptItems items={entries('inProgress', 'working')} onOpenFile={vi.fn()} />,
+  );
+  expect(details().open).toBe(true);
+  fireEvent.click(details().querySelector('summary')!);
+  await settle();
+  expect(details().open).toBe(false);
+  view.rerender(
+    <AgentTranscriptItems items={entries('inProgress', 'still working')} onOpenFile={vi.fn()} />,
+  );
+  expect(details().open).toBe(false);
+  view.rerender(
+    <AgentTranscriptItems items={entries('failed', 'still working')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(details().open).toBe(false);
+
+  view.unmount();
+  const failed = render(<AgentTranscriptItems items={entries('failed')} onOpenFile={vi.fn()} />);
+  expect(
+    (failed.container.querySelector('details.agent-tool-run') as HTMLDetailsElement).open,
+  ).toBe(true);
+  failed.unmount();
+
+  const running = render(
+    <AgentTranscriptItems items={entries('inProgress')} onOpenFile={vi.fn()} />,
+  );
+  const runningDetails = () =>
+    running.container.querySelector('details.agent-tool-run') as HTMLDetailsElement;
+  expect(runningDetails().open).toBe(true);
+  running.rerender(
+    <AgentTranscriptItems items={entries('completed', 'finished')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(runningDetails().open).toBe(true);
+  expect(running.container.querySelector('.agent-tool-run-running')).toBeNull();
 });
 
 it('preserves interleaved transcript order when switching away from a thread and reopening it', async () => {
@@ -996,6 +1092,101 @@ it('copies the device code over HTTP and confirms success without an account err
   }
 });
 
+const catalogThreads = [
+  { ...thread, id: 'thread', name: 'Alpha notes', preview: '' },
+  { ...thread, id: 'beta', name: 'Beta plan', preview: '' },
+];
+
+function mockSearchableThreads() {
+  vi.mocked(post).mockImplementation(async (path, body: any) => {
+    if (!path.endsWith('/rpc')) return {};
+    rpcCalls.push(body);
+    if (body.method === 'thread/list') {
+      const query = String(body.params?.search || '')
+        .trim()
+        .toLowerCase();
+      return {
+        data: catalogThreads.filter((item) => {
+          const haystack = `${item.name || ''} ${item.preview || ''}`.toLowerCase();
+          return !query || haystack.includes(query);
+        }),
+      };
+    }
+    if (body.method === 'thread/read') {
+      const match =
+        catalogThreads.find((item) => item.id === body.params.threadId) || catalogThreads[0];
+      return { thread: { ...match, planMode, turns: [] } };
+    }
+    if (body.method === 'thread/start')
+      return { thread: { ...catalogThreads[0], planMode, turns: [] } };
+    return {};
+  });
+}
+
+async function openThreadList() {
+  render(
+    <UiProvider>
+      <Panel />
+    </UiProvider>,
+  );
+  await waitFor(() => expect(FakeSocket.instances).toHaveLength(1));
+  await act(async () => FakeSocket.instances[0]!.message({ type: 'snapshot', snapshot }));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Send', exact: true }) as HTMLButtonElement).disabled,
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
+  await screen.findByRole('heading', { name: 'Threads' });
+}
+
+it('keeps a leftover thread search from hiding threads in the header switcher', async () => {
+  mockSearchableThreads();
+  await openThreadList();
+  fireEvent.change(screen.getByLabelText('Search threads'), { target: { value: 'Alpha' } });
+  const alpha = await screen.findByRole('button', { name: /^Alpha notes/ });
+  expect(screen.queryByRole('button', { name: /^Beta plan/ })).toBeNull();
+  fireEvent.click(alpha);
+  expect(screen.queryByLabelText('Search threads')).toBeNull();
+  await waitFor(() =>
+    expect(
+      rpcCalls.filter((call) => call.method === 'thread/list').at(-1)?.params.search,
+    ).toBeUndefined(),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Switch thread' }));
+  expect(await screen.findByRole('menuitem', { name: 'Beta plan' })).not.toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Alpha notes' })).not.toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'No threads' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
+  expect((screen.getByLabelText('Search threads') as HTMLInputElement).value).toBe('Alpha');
+  expect(screen.queryByRole('button', { name: /^Beta plan/ })).toBeNull();
+  expect(screen.getByRole('button', { name: /^Alpha notes/ })).not.toBeNull();
+});
+
+it('does not collapse the header switcher to "No threads" after an unmatched search', async () => {
+  mockSearchableThreads();
+  await openThreadList();
+  fireEvent.change(screen.getByLabelText('Search threads'), { target: { value: 'missing' } });
+  expect(await screen.findByText('No threads match your search.')).not.toBeNull();
+  await waitFor(() =>
+    expect(
+      rpcCalls.some((call) => call.method === 'thread/list' && call.params.search === 'missing'),
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'New thread' }));
+  await screen.findByRole('heading', { name: 'Alpha notes' });
+  expect(screen.queryByLabelText('Search threads')).toBeNull();
+  await waitFor(() =>
+    expect(
+      rpcCalls.filter((call) => call.method === 'thread/list').at(-1)?.params.search,
+    ).toBeUndefined(),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Switch thread' }));
+  expect(screen.queryByRole('menuitem', { name: 'No threads' })).toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Alpha notes' })).not.toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Beta plan' })).not.toBeNull();
+});
+
 it('shows the Threads page with search, archived filtering, row menus and empty states', async () => {
   await mountPanel();
   fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
@@ -1032,10 +1223,10 @@ it('moves focus between thread rows with arrows and opens a selected row', async
   fireEvent.click(first);
   expect(screen.getByLabelText('Message agent')).not.toBeNull();
 });
-it('keeps model controls in Run settings and submits only with Cmd/Ctrl+Enter', async () => {
+it('keeps model controls in Model and submits only with Cmd/Ctrl+Enter', async () => {
   await mountPanel();
   expect(screen.queryByLabelText('Agent model')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   expect(screen.getByLabelText('Agent model')).not.toBeNull();
   fireEvent.keyDown(screen.getByLabelText('Agent model'), { key: 'Escape' });
   expect(screen.queryByLabelText('Agent model')).toBeNull();
@@ -1291,7 +1482,7 @@ it('switches API-specific run models and preserves drafts without modifying acco
   fireEvent.change(screen.getByLabelText('Message agent'), {
     target: { value: 'Keep this draft' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   fireEvent.change(screen.getByLabelText('Agent API'), { target: { value: 'cliproxyapi' } });
   await screen.findByRole('option', { name: 'allowed' });
   expect((screen.getByLabelText('Agent model') as HTMLSelectElement).value).toBe('allowed');
@@ -1338,7 +1529,7 @@ it('restores historical API/model/effort and disables API selection during compa
       : originalPost(path, body),
   );
   await mountPanel();
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   await waitFor(() =>
     expect((screen.getByLabelText('Agent API') as HTMLSelectElement).value).toBe('cliproxyapi'),
   );

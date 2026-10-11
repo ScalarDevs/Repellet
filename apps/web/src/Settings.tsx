@@ -23,6 +23,7 @@ import {
   useUi,
   Spinner,
   Avatar,
+  EmptyState,
   LoadError,
   Button,
   IconButton,
@@ -83,50 +84,51 @@ export function ProjectSettings({
           ...(manage ? [{ id: 'environment' as const, label: 'Environment', icon: Layers }] : []),
           { id: 'members', label: 'People', icon: Users },
         ]}
-      />
-      <TabPanel>
-        {tab === 'general' && (
-          <General
-            details={details}
-            project={project}
-            busy={busy}
-            run={run}
-            alive={alive}
-            onChanged={onChanged}
-            onDuplicate={onDuplicate}
-          />
-        )}
-        <div hidden={tab !== 'run'}>
-          <RepositorySetupForm
-            project={project}
-            onChanged={onChanged}
-            settings={runSettings}
-            onViewLogs={
-              onViewPreparationLogs
-                ? () => {
-                    dismiss();
-                    onViewPreparationLogs();
-                  }
-                : undefined
-            }
-          />
-          <RunProfiles project={project} />
-        </div>
-        {manage && tab === 'environment' && (
-          <Environment
-            environment={environment}
-            project={project}
-            busy={busy}
-            run={run}
-            alive={alive}
-            onChanged={onChanged}
-            onSaved={dismiss}
-          />
-        )}
-        {tab === 'members' && (
-          <Members people={people} project={project} busy={busy} run={run} alive={alive} />
-        )}
-      </TabPanel>
+      >
+        <TabPanel>
+          {tab === 'general' && (
+            <General
+              details={details}
+              project={project}
+              busy={busy}
+              run={run}
+              alive={alive}
+              onChanged={onChanged}
+              onDuplicate={onDuplicate}
+            />
+          )}
+          <div hidden={tab !== 'run'}>
+            <RepositorySetupForm
+              project={project}
+              onChanged={onChanged}
+              settings={runSettings}
+              onViewLogs={
+                onViewPreparationLogs
+                  ? () => {
+                      dismiss();
+                      onViewPreparationLogs();
+                    }
+                  : undefined
+              }
+            />
+            <RunProfiles project={project} />
+          </div>
+          {manage && tab === 'environment' && (
+            <Environment
+              environment={environment}
+              project={project}
+              busy={busy}
+              run={run}
+              alive={alive}
+              onChanged={onChanged}
+              onSaved={dismiss}
+            />
+          )}
+          {tab === 'members' && (
+            <Members people={people} project={project} busy={busy} run={run} alive={alive} />
+          )}
+        </TabPanel>
+      </Tabs>
     </Modal>
   );
 }
@@ -205,7 +207,7 @@ function General({
           </Field>
           {manage && (
             <div className="form-actions start">
-              <Button type="submit" busy={busy} icon={<Save size={15} />}>
+              <Button type="submit" variant="primary" busy={busy} icon={<Save size={15} />}>
                 Save changes
               </Button>
             </div>
@@ -273,6 +275,7 @@ function General({
                     title: 'Stop workspace?',
                     description: 'This stops terminals and running apps. Files are kept.',
                     confirm: true,
+                    danger: true,
                   })
                 )
                   void run(async () => {
@@ -474,71 +477,82 @@ function Environment({
         )}
         {variables === null ? (
           loadError ? null : (
-            <Spinner />
+            <Spinner label="Loading variables…" />
           )
         ) : (
           <div className="env-list">
-            {variables.map((v, i) => (
-              <div className="env-row" key={i}>
-                <input
-                  className="mono-input"
-                  disabled={busy}
-                  required
-                  pattern="[A-Za-z_][A-Za-z0-9_]*"
-                  aria-invalid={!!errors[v.key]}
-                  aria-label={`Variable name ${i + 1}`}
-                  value={v.key}
-                  placeholder="VARIABLE_NAME"
-                  onChange={(e) => update(i, { key: e.target.value })}
-                />
-                <input
-                  className="mono-input"
-                  disabled={busy}
-                  maxLength={32768}
-                  aria-invalid={!!errors[v.key]}
-                  aria-label={`Variable value ${i + 1}`}
-                  readOnly={v.original === databaseVariableName}
-                  title={
-                    v.original === databaseVariableName
-                      ? 'Database-managed connection value'
-                      : undefined
-                  }
-                  type={visible ? 'text' : 'password'}
-                  value={v.value}
-                  placeholder="Value"
-                  onChange={(e) => update(i, { value: e.target.value })}
-                />
-                <IconButton
-                  label={`Remove variable ${i + 1}`}
-                  icon={<Trash2 size={14} />}
-                  disabled={busy || v.original === databaseVariableName}
-                  onClick={() => setVariables((v) => v!.filter((_, n) => n !== i))}
-                />
-                {errors[v.key] && (
-                  <p className="field-error" role="alert">
-                    {errors[v.key]}
-                  </p>
-                )}
-              </div>
-            ))}
+            {variables.map((v, i) => {
+              const rowError = errors[v.key];
+              // Only the first row with a key shows that key's message (avoids duplicates).
+              const showRowError =
+                !!rowError && variables.findIndex((entry) => entry.key === v.key) === i;
+              const errorId = showRowError ? `env-error-${i}` : undefined;
+              return (
+                <div className="env-row" key={i}>
+                  <input
+                    className="mono-input"
+                    disabled={busy}
+                    required
+                    pattern="[A-Za-z_][A-Za-z0-9_]*"
+                    aria-invalid={!!showRowError}
+                    aria-describedby={errorId}
+                    aria-label={`Variable name ${i + 1}`}
+                    value={v.key}
+                    placeholder="VARIABLE_NAME"
+                    onChange={(e) => update(i, { key: e.target.value })}
+                  />
+                  <input
+                    className="mono-input"
+                    disabled={busy}
+                    maxLength={32768}
+                    aria-invalid={!!showRowError}
+                    aria-describedby={errorId}
+                    aria-label={`Variable value ${i + 1}`}
+                    readOnly={v.original === databaseVariableName}
+                    title={
+                      v.original === databaseVariableName
+                        ? 'Database-managed connection value'
+                        : undefined
+                    }
+                    type={visible ? 'text' : 'password'}
+                    value={v.value}
+                    placeholder="Value"
+                    onChange={(e) => update(i, { value: e.target.value })}
+                  />
+                  <IconButton
+                    label={`Remove variable ${i + 1}`}
+                    icon={<Trash2 size={14} />}
+                    disabled={busy || v.original === databaseVariableName}
+                    onClick={() => setVariables((v) => v!.filter((_, n) => n !== i))}
+                  />
+                  {showRowError && (
+                    <p className="field-error" role="alert" id={errorId}>
+                      {rowError}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
-        <Button variant="link" disabled={busy} onClick={() => void load()}>
-          Reload variables
-        </Button>
-        <Button
-          variant="link"
-          disabled={!loaded || busy || variables!.length >= 100}
-          onClick={() => setVariables((v) => [...(v || []), { key: '', value: '' }])}
-        >
-          <Plus size={14} />
-          Add variable
-        </Button>
+        <div className="env-link-actions" role="group" aria-label="Variable actions">
+          <Button variant="link" disabled={busy} onClick={() => void load()}>
+            Reload variables
+          </Button>
+          <Button
+            variant="link"
+            disabled={!loaded || busy || variables!.length >= 100}
+            onClick={() => setVariables((v) => [...(v || []), { key: '', value: '' }])}
+          >
+            <Plus size={14} />
+            Add variable
+          </Button>
+        </div>
         {Object.entries(errors)
           .filter(([key]) => !variables?.some((v) => v.key === key))
           .map(([key, message]) => (
             <FormError key={key}>
-              {key}: {message}
+              {key === 'environment' ? message : `${key}: ${message}`}
             </FormError>
           ))}
         <div className="form-actions start">
@@ -618,49 +632,57 @@ function Members({
       description="Editors can edit, run code, and use shared terminals. Viewers can read files, observe terminals, and open previews."
     >
       {loadError && <LoadError message={loadError} onRetry={load} />}
-      {!members && !loadError && <Spinner />}
-      <div className="list">
-        {members?.map((m) => (
-          <div className="list-row" key={m.user.id}>
-            <Avatar name={m.user.displayName} />
-            <div className="list-row-main">
-              <strong className="truncate" title={m.user.displayName}>
-                {m.user.displayName}
-              </strong>
-              <small className="truncate" title={m.user.username}>
-                @{m.user.username}
-              </small>
-            </div>
-            {manage && m.role !== 'owner' ? (
-              <div className="list-row-actions">
-                <select
-                  className="role-select"
-                  aria-label={`Role for ${m.user.displayName}`}
-                  value={m.role}
-                  disabled={busy}
-                  onChange={(e) => {
-                    const nextRole = e.target.value;
-                    void change(() =>
-                      put(base + '/members', { userId: m.user.id, role: nextRole }),
-                    );
-                  }}
-                >
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-                <IconButton
-                  label={`Remove ${m.user.displayName}`}
-                  icon={<Trash2 size={14} />}
-                  disabled={busy}
-                  onClick={() => change(() => remove(base + '/members/' + m.user.id))}
-                />
+      {!members && !loadError && <Spinner label="Loading people…" />}
+      {members && !members.length && (
+        <EmptyState
+          title="No members yet"
+          description="Invite someone to collaborate on this project."
+        />
+      )}
+      {!!members?.length && (
+        <div className="list">
+          {members.map((m) => (
+            <div className="list-row" key={m.user.id}>
+              <Avatar name={m.user.displayName} />
+              <div className="list-row-main">
+                <strong className="truncate" title={m.user.displayName}>
+                  {m.user.displayName}
+                </strong>
+                <small className="truncate" title={m.user.username}>
+                  @{m.user.username}
+                </small>
               </div>
-            ) : (
-              <span className="role-label">{m.role}</span>
-            )}
-          </div>
-        ))}
-      </div>
+              {manage && m.role !== 'owner' ? (
+                <div className="list-row-actions">
+                  <select
+                    className="role-select"
+                    aria-label={`Role for ${m.user.displayName}`}
+                    value={m.role}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      void change(() =>
+                        put(base + '/members', { userId: m.user.id, role: nextRole }),
+                      );
+                    }}
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <IconButton
+                    label={`Remove ${m.user.displayName}`}
+                    icon={<Trash2 size={14} />}
+                    disabled={busy}
+                    onClick={() => change(() => remove(base + '/members/' + m.user.id))}
+                  />
+                </div>
+              ) : (
+                <span className="role-label">{m.role}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {manage && (
         <form
           className="invite-form"

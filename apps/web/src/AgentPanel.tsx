@@ -1,5 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Plus, Settings2, Square, MoreHorizontal, ListChecks, Paperclip } from 'lucide-react';
+import {
+  Plus,
+  Settings2,
+  Square,
+  MoreHorizontal,
+  ListChecks,
+  Paperclip,
+  ChevronsUpDown,
+} from 'lucide-react';
 import {
   projectAgentEvent,
   type AgentSettings as Settings,
@@ -19,7 +27,17 @@ import { AgentTranscriptItems } from './AgentItems';
 import { useAgentAttachments, AgentDraftAttachments, attachmentAccept } from './AgentAttachments';
 export { AgentItem, AgentTranscriptItems } from './AgentItems';
 import { flushOpenDocuments } from './documentSaves';
-import { Button, IconButton, Banner, Spinner, MenuButton, MenuItem, useUi } from './ui';
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Banner,
+  LoadError,
+  Spinner,
+  MenuButton,
+  MenuItem,
+  useUi,
+} from './ui';
 export function AgentPanel({
   projectId,
   selectedThread,
@@ -103,10 +121,13 @@ export function AgentPanel({
   }
   async function loadThreads() {
     const revision = ++listRevision.current;
+    // The search field is only on the thread list. A leftover query must not
+    // narrow the header switcher, which has no way to clear it.
+    const listSearch = selected.current ? '' : search.trim();
     const result = await rpc<{ data: Thread[]; nextCursor: string | null }>('thread/list', {
       archived,
       limit: 100,
-      ...(search.trim() ? { search: search.trim() } : {}),
+      ...(listSearch ? { search: listSearch } : {}),
     });
     if (alive.current && revision === listRevision.current)
       setThreads(result.data.filter((thread) => !thread.parentThreadId));
@@ -396,7 +417,7 @@ export function AgentPanel({
               <Plus size={15} /> New thread
             </Button>
             <IconButton
-              label="Agent settings"
+              label="Defaults"
               icon={<Settings2 size={16} />}
               onClick={() => setSettingsOpen(true)}
             />
@@ -443,28 +464,38 @@ export function AgentPanel({
             }}
           >
             {filteredThreads.length === 0 ? (
-              <div className="agent-empty-state">
-                <p>
-                  {search
+              <EmptyState
+                className="pane-empty agent-empty-state"
+                title={
+                  search
+                    ? 'No matching threads'
+                    : archived
+                      ? 'No archived threads'
+                      : 'No threads yet'
+                }
+                description={
+                  search
                     ? 'No threads match your search.'
                     : archived
-                      ? 'No archived threads.'
-                      : 'Start a thread to work on this project.'}
-                </p>
-                {!search && !archived && (
-                  <Button
-                    variant="primary"
-                    disabled={unavailable}
-                    onClick={() =>
-                      mutate(async () => {
-                        await newThread();
-                      })
-                    }
-                  >
-                    Start a thread
-                  </Button>
-                )}
-              </div>
+                      ? 'Archived conversations will appear here.'
+                      : 'Start a thread to work on this project.'
+                }
+                action={
+                  !search && !archived ? (
+                    <Button
+                      variant="primary"
+                      disabled={unavailable}
+                      onClick={() =>
+                        mutate(async () => {
+                          await newThread();
+                        })
+                      }
+                    >
+                      Start a thread
+                    </Button>
+                  ) : undefined
+                }
+              />
             ) : (
               filteredThreads.map((thread) => (
                 <div className="agent-thread-entry" role="listitem" key={thread.id}>
@@ -520,6 +551,30 @@ export function AgentPanel({
           <Button size="sm" variant="ghost" onClick={() => onSelectThread('')}>
             ← Threads
           </Button>
+          <MenuButton
+            label="Switch thread"
+            icon={<ChevronsUpDown size={14} />}
+            className="agent-thread-switcher"
+          >
+            {threads.length === 0 ? (
+              <MenuItem disabled onSelect={() => {}}>
+                No threads
+              </MenuItem>
+            ) : (
+              threads.map((thread) => (
+                <MenuItem
+                  key={thread.id}
+                  disabled={thread.id === selectedThread}
+                  onSelect={() => {
+                    setHistory(null);
+                    onSelectThread(thread.id);
+                  }}
+                >
+                  {thread.name || thread.preview || 'New conversation'}
+                </MenuItem>
+              ))
+            )}
+          </MenuButton>
           <h2 title={history?.name || 'New conversation'}>{history?.name || 'New conversation'}</h2>
           <MenuButton label="Thread actions" icon={<MoreHorizontal size={16} />}>
             <MenuItem disabled={unavailable || activeHere} onSelect={() => renameThread(history)}>
@@ -539,26 +594,22 @@ export function AgentPanel({
             </MenuItem>
           </MenuButton>
           <IconButton
-            label="Agent settings"
+            label="Defaults"
             icon={<Settings2 size={16} />}
             onClick={() => setSettingsOpen(true)}
           />
         </div>
       )}
       {error && (
-        <Banner tone="danger" compact>
-          {error}
-          <Button
-            size="sm"
-            onClick={() =>
-              mutate(async () => {
-                setReconnectRevision((value) => value + 1);
-              })
-            }
-          >
-            Refresh status
-          </Button>
-        </Banner>
+        <LoadError
+          message={error}
+          retryLabel="Refresh status"
+          onRetry={() =>
+            mutate(async () => {
+              setReconnectRevision((value) => value + 1);
+            })
+          }
+        />
       )}
       {snapshot?.error && (
         <Banner tone="danger" compact>
@@ -573,7 +624,7 @@ export function AgentPanel({
             aria-label="Agent conversation"
             role="log"
           >
-            {!snapshot && !error && <Spinner />}
+            {!snapshot && !error && <Spinner label="Loading conversation…" />}
             <AgentTranscriptItems items={items} onOpenFile={onOpenFile} projectId={projectId} />
             {snapshot?.pending
               .filter(
@@ -594,17 +645,32 @@ export function AgentPanel({
               ))}
           </div>
           <div className="agent-status" role="status">
-            {!connected
-              ? 'Agent disconnected'
-              : active
-                ? activeHere
-                  ? snapshot?.waiting
-                    ? 'Waiting for your response'
-                    : 'Working…'
-                  : snapshot?.waiting
+            {!connected ? (
+              'Agent disconnected'
+            ) : active ? (
+              activeHere ? (
+                snapshot?.waiting ? (
+                  'Waiting for your response'
+                ) : (
+                  'Working…'
+                )
+              ) : (
+                <button
+                  type="button"
+                  className="agent-status-link"
+                  onClick={() => {
+                    setHistory(null);
+                    onSelectThread(active.threadId);
+                  }}
+                >
+                  {snapshot?.waiting
                     ? 'Another conversation is waiting for input'
-                    : 'Another conversation is working'
-                : 'Ready'}
+                    : 'Another conversation is working'}
+                </button>
+              )
+            ) : (
+              'Ready'
+            )}
             {active && (
               <Button
                 size="sm"
@@ -765,11 +831,17 @@ export function AgentPanel({
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="agent-model-chip"
+                  aria-label="Model"
                   aria-expanded={runSettingsOpen}
                   aria-controls="agent-run-settings"
+                  title="Model and API for this turn"
                   onClick={() => setRunSettingsOpen((value) => !value)}
                 >
-                  Run settings
+                  {models.find((item) => item.model === model)?.displayName ||
+                    model ||
+                    (agentApi === 'chatgpt' ? 'ChatGPT' : 'Custom API')}
+                  {effort ? ` · ${effort}` : ''}
                 </Button>
                 {runSettingsOpen && (
                   <div
@@ -877,11 +949,11 @@ export function AgentPanel({
                   </div>
                 )}
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
+              <IconButton
+                label="Plan mode"
+                icon={<ListChecks size={15} />}
                 className="agent-plan-toggle"
-                aria-pressed={history?.planMode === true}
+                pressed={history?.planMode === true}
                 title={
                   history?.planMode ? 'Leave read-only plan mode' : 'Plan before making changes'
                 }
@@ -897,14 +969,30 @@ export function AgentPanel({
                       );
                   })
                 }
-              >
-                <ListChecks size={14} aria-hidden="true" />
-                Plan mode
-              </Button>
+              />
               <span className="agent-keyboard-hint">⌘ / Ctrl + Enter</span>
               <Button
                 type="submit"
                 variant="primary"
+                title={
+                  archived
+                    ? 'Unarchive this thread to send'
+                    : pasteChoice
+                      ? 'Finish or cancel the paste choice first'
+                      : attachments.blocked
+                        ? 'Sending blocked: finish uploading attachments'
+                        : active && !activeHere
+                          ? 'Another conversation is working — open it or stop it first'
+                          : !activeHere && (catalogLoading || !modelReady)
+                            ? catalogLoading
+                              ? 'Loading models…'
+                              : 'Choose a model before sending'
+                            : !text.trim() && !attachments.input.length
+                              ? 'Enter a message or attach a file'
+                              : unavailable
+                                ? 'Agent is unavailable'
+                                : undefined
+                }
                 disabled={
                   unavailable ||
                   (!activeHere && (catalogLoading || !modelReady)) ||

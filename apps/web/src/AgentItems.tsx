@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChevronRight, FileCode2 } from 'lucide-react';
@@ -161,6 +162,57 @@ function normalizedDiff(args: Record<string, unknown>, output: string): string {
   return output;
 }
 
+function AgentToolRun({
+  entries,
+  onOpenFile,
+}: {
+  entries: AgentTranscriptEntry[];
+  onOpenFile: (path: string) => void;
+}) {
+  const failed = entries.filter(({ item }) => toolFailed(item)).length;
+  const running = entries.some(
+    ({ item }) => 'status' in item && ['inProgress', 'in_progress'].includes(item.status),
+  );
+  const revealed = failed > 0 || running;
+  // Status may open a run the user has not collapsed. It must not keep owning
+  // `open`, or the next transcript render overwrites their expand/collapse.
+  const [open, setOpen] = useState(revealed);
+  const collapsedByUser = useRef(false);
+  useEffect(() => {
+    if (revealed && !collapsedByUser.current) setOpen(true);
+  }, [revealed]);
+  const categories = [...new Set(entries.map(({ item }) => toolCategory(item)))];
+  return (
+    <details
+      className="agent-tool-run"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary
+        onClick={(event) => {
+          event.preventDefault();
+          setOpen((current) => {
+            const next = !current;
+            collapsedByUser.current = !next;
+            return next;
+          });
+        }}
+      >
+        <ChevronRight size={14} className="agent-tool-run-chevron" aria-hidden="true" />
+        <span className="agent-tool-run-count">{entries.length} tools</span>
+        <span className="agent-tool-run-labels">{categories.join(' · ')}</span>
+        {failed > 0 && <span className="agent-tool-run-failed">{failed} failed</span>}
+        {running && <span className="agent-tool-run-running">Working…</span>}
+      </summary>
+      <div className="agent-tool-run-content">
+        {entries.map(({ key, item }) => (
+          <AgentItem key={key} item={item} onOpenFile={onOpenFile} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
 export function AgentTranscriptItems({
   items,
   onOpenFile,
@@ -180,27 +232,7 @@ export function AgentTranscriptItems({
           projectId={projectId}
         />
       );
-    const failed = group.entries.filter(({ item }) => toolFailed(item)).length;
-    const running = group.entries.some(
-      ({ item }) => 'status' in item && ['inProgress', 'in_progress'].includes(item.status),
-    );
-    const categories = [...new Set(group.entries.map(({ item }) => toolCategory(item)))];
-    return (
-      <details className="agent-tool-run" key={group.key}>
-        <summary>
-          <ChevronRight size={14} className="agent-tool-run-chevron" aria-hidden="true" />
-          <span className="agent-tool-run-count">{group.entries.length} tools</span>
-          <span className="agent-tool-run-labels">{categories.join(' · ')}</span>
-          {failed > 0 && <span className="agent-tool-run-failed">{failed} failed</span>}
-          {running && <span className="agent-tool-run-running">Working…</span>}
-        </summary>
-        <div className="agent-tool-run-content">
-          {group.entries.map(({ key, item }) => (
-            <AgentItem key={key} item={item} onOpenFile={onOpenFile} />
-          ))}
-        </div>
-      </details>
-    );
+    return <AgentToolRun key={group.key} entries={group.entries} onOpenFile={onOpenFile} />;
   });
 }
 

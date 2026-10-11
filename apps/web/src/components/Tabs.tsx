@@ -1,6 +1,15 @@
-import { useId, useRef, type ComponentType, type KeyboardEvent, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useId,
+  useRef,
+  type ComponentType,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react';
 type Icon = ComponentType<{ size?: number }>;
 export type TabItem<T extends string> = { id: T; label: string; icon?: Icon };
+const TabsContext = createContext<{ id: string; value: string } | null>(null);
 // Panel switcher with the WAI-ARIA tabs pattern: roving tabIndex and Arrow/Home/End keys.
 export function Tabs<T extends string>({
   label,
@@ -9,6 +18,7 @@ export function Tabs<T extends string>({
   onChange,
   disabled = false,
   className = '',
+  children,
 }: {
   label: string;
   items: TabItem<T>[];
@@ -16,6 +26,7 @@ export function Tabs<T extends string>({
   onChange: (value: T) => void;
   disabled?: boolean;
   className?: string;
+  children?: ReactNode;
 }) {
   const id = useId();
   const list = useRef<HTMLDivElement>(null);
@@ -37,30 +48,34 @@ export function Tabs<T extends string>({
     list.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
   }
   return (
-    <div
-      ref={list}
-      role="tablist"
-      aria-label={label}
-      className={`tabs ${className}`}
-      onKeyDown={onKeyDown}
-    >
-      {items.map(({ id: item, label, icon: Icon }) => (
-        <button
-          key={item}
-          type="button"
-          role="tab"
-          id={`${id}-${item}`}
-          aria-selected={value === item}
-          tabIndex={value === item ? 0 : -1}
-          disabled={disabled}
-          className={value === item ? 'active' : ''}
-          onClick={() => onChange(item)}
-        >
-          {Icon && <Icon size={15} />}
-          {label}
-        </button>
-      ))}
-    </div>
+    <TabsContext.Provider value={{ id, value }}>
+      <div
+        ref={list}
+        role="tablist"
+        aria-label={label}
+        className={`tabs ${className}`}
+        onKeyDown={onKeyDown}
+      >
+        {items.map(({ id: item, label, icon: Icon }) => (
+          <button
+            key={item}
+            type="button"
+            role="tab"
+            id={`${id}-tab-${item}`}
+            aria-controls={`${id}-panel`}
+            aria-selected={value === item}
+            tabIndex={value === item ? 0 : -1}
+            disabled={disabled}
+            className={value === item ? 'active' : ''}
+            onClick={() => onChange(item)}
+          >
+            {Icon && <Icon size={15} />}
+            {label}
+          </button>
+        ))}
+      </div>
+      {children}
+    </TabsContext.Provider>
   );
 }
 // Filters that change a list, not the visible panel, use pressed buttons instead of tabs.
@@ -92,8 +107,14 @@ export function SegmentedControl<T extends string>({
   );
 }
 export function TabPanel({ children }: { children: ReactNode }) {
+  const tabs = useContext(TabsContext);
   return (
-    <div role="tabpanel" className="tab-panel">
+    <div
+      role="tabpanel"
+      id={tabs ? `${tabs.id}-panel` : undefined}
+      aria-labelledby={tabs ? `${tabs.id}-tab-${tabs.value}` : undefined}
+      className="tab-panel"
+    >
       {children}
     </div>
   );

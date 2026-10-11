@@ -37,12 +37,12 @@ export function readPreferences(key: string): WorkspacePreferences {
     showSidebar: value.showSidebar !== false,
     showPreview: value.showPreview !== false,
     rightPanel:
-      value.rightPanel === 'database' && value.databaseOpen === true
+      value.rightPanel === 'database'
         ? 'database'
         : value.rightPanel === 'agent'
           ? 'agent'
           : 'preview',
-    databaseOpen: value.databaseOpen === true,
+    databaseOpen: value.databaseOpen === true || value.rightPanel === 'database',
     lastFixedRightPanel: value.lastFixedRightPanel === 'agent' ? 'agent' : 'preview',
     agentThread:
       typeof value.agentThread === 'string' && /^[a-zA-Z0-9_-]{1,200}$/.test(value.agentThread)

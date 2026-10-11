@@ -145,7 +145,6 @@ export function Workspace({
   const [rightPanel, setRightPanel] = useState<'preview' | 'agent' | 'database'>(
     saved.rightPanel || 'preview',
   );
-  const [databaseOpen, setDatabaseOpen] = useState(saved.databaseOpen === true);
   const [lastFixedRightPanel, setLastFixedRightPanel] = useState<'preview' | 'agent'>(
     saved.lastFixedRightPanel || (saved.rightPanel === 'agent' ? 'agent' : 'preview'),
   );
@@ -155,15 +154,30 @@ export function Workspace({
   }, [rightPanel]);
   const [agentThread, setAgentThread] = useState(saved.agentThread || '');
   const [agentVisited, setAgentVisited] = useState(saved.rightPanel === 'agent');
+  const [databaseVisited, setDatabaseVisited] = useState(
+    saved.rightPanel === 'database' || saved.databaseOpen === true,
+  );
   useEffect(() => {
     if (rightPanel === 'agent') setAgentVisited(true);
+    if (rightPanel === 'database') setDatabaseVisited(true);
   }, [rightPanel]);
   const selectedRightPanel =
-    rightPanel === 'database' && databaseOpen && editable
+    rightPanel === 'database' && editable
       ? 'database'
       : rightPanel === 'agent' && agentOwner
         ? 'agent'
         : 'preview';
+  function selectRightPanel(panel: 'preview' | 'agent' | 'database') {
+    if (layout.previewVisible && selectedRightPanel === panel) {
+      layout.setShowPreview(false);
+      return;
+    }
+    setRightPanel(panel);
+    layout.setShowPreview(true);
+  }
+  const preparationStatus = project?.preparation.status || 'none';
+  const preparationRelevant = !['none', 'ready'].includes(preparationStatus);
+  const showPreparationTab = preparationRelevant || bottomPanelTab === 'preparation';
   const [quickOpen, setQuickOpen] = useState(false);
   const [settings, setSettings] = useState(false);
   const [peers, setPeers] = useState<{ id: string; name: string }[]>([]);
@@ -240,7 +254,7 @@ export function Workspace({
       showPreview: layout.showPreview,
       rightPanel: selectedRightPanel,
       agentThread,
-      databaseOpen,
+      databaseOpen: databaseVisited || selectedRightPanel === 'database',
       lastFixedRightPanel,
       bottomPanelTab,
       showTerminal: layout.showTerminal,
@@ -258,7 +272,7 @@ export function Workspace({
     layout.showSidebar,
     layout.showPreview,
     selectedRightPanel,
-    databaseOpen,
+    databaseVisited,
     lastFixedRightPanel,
     agentThread,
     bottomPanelTab,
@@ -308,7 +322,8 @@ export function Workspace({
     const handler = (e: KeyboardEvent) => {
       if (!opened || e.defaultPrevented || hasOpenDialog()) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 'p') {
+      const key = e.key.toLowerCase();
+      if (mod && key === 'p') {
         e.preventDefault();
         setQuickOpen(true);
       }
@@ -316,15 +331,31 @@ export function Workspace({
         e.preventDefault();
         void run();
       }
-      if (mod && e.key === 's') e.preventDefault();
-      if (mod && e.shiftKey && e.key.toLowerCase() === 'f') {
+      if (mod && key === 's') e.preventDefault();
+      if (mod && e.key === '`') {
+        e.preventDefault();
+        layout.setShowTerminal(!layout.showTerminal);
+      }
+      if (mod && !e.shiftKey && key === 'b') {
+        e.preventDefault();
+        layout.setShowSidebar(!layout.showSidebar);
+      }
+      if (mod && e.shiftKey && key === 'e') {
+        e.preventDefault();
+        layout.revealPane('files');
+      }
+      if (mod && e.shiftKey && key === 'f') {
         e.preventDefault();
         layout.revealPane('search');
+      }
+      if (mod && e.shiftKey && key === 'g') {
+        e.preventDefault();
+        layout.revealPane('git');
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [project, editable, busy, opened]);
+  }, [project, editable, busy, opened, layout.showTerminal, layout.showSidebar]);
   async function createTerminal() {
     try {
       const name = await ui.ask({
@@ -467,37 +498,23 @@ export function Workspace({
             <div className="workspace-body" ref={layout.bodyRef}>
               <ActivityBar
                 pane={layout.pane}
-                showSidebar={layout.showSidebar}
+                showSidebar={layout.sidebarVisible}
                 showTerminal={layout.showTerminal}
-                showPreview={layout.showPreview}
+                showRightPanel={layout.previewVisible}
+                rightPanel={selectedRightPanel}
                 onPane={layout.selectPane}
                 onToggleTerminal={() => layout.setShowTerminal(!layout.showTerminal)}
-                onTogglePreview={() => {
-                  setRightPanel('preview');
-                  layout.setShowPreview(
-                    selectedRightPanel === 'preview' ? !layout.showPreview : true,
-                  );
-                }}
+                onToggleRightPanel={() => layout.setShowPreview(!layout.showPreview)}
+                onPreview={() => selectRightPanel('preview')}
                 databaseAllowed={editable}
-                databaseActive={layout.showPreview && selectedRightPanel === 'database'}
-                onDatabase={() => {
-                  setDatabaseOpen(true);
-                  setRightPanel('database');
-                  layout.setShowPreview(true);
-                }}
+                onDatabase={() => selectRightPanel('database')}
                 agentOwner={agentOwner}
-                agentActive={layout.showPreview && selectedRightPanel === 'agent'}
-                onAgent={() => {
-                  setRightPanel('agent');
-                  layout.setShowPreview(
-                    selectedRightPanel === 'agent' ? !layout.showPreview : true,
-                  );
-                }}
+                onAgent={() => selectRightPanel('agent')}
               />
               <aside
                 className="explorer"
-                hidden={!layout.showSidebar}
-                style={{ width: layout.showSidebar ? dimensions.explorer : 0 }}
+                hidden={!layout.sidebarVisible}
+                style={{ width: layout.sidebarVisible ? dimensions.explorer : 0 }}
               >
                 <div className="tool-pane" hidden={layout.pane !== 'files'}>
                   <FileTree
@@ -546,12 +563,13 @@ export function Workspace({
                   </div>
                 )}
               </aside>
-              {layout.showSidebar && (
+              {layout.sidebarVisible && (
                 <ResizeHandle
                   onStart={() => layout.setLeftWidth(dimensions.explorer)}
                   onDelta={(delta) =>
                     layout.setLeftWidth((v) => Math.max(170, Math.min(480, v + delta)))
                   }
+                  onReset={() => layout.setLeftWidth(232)}
                 />
               )}
               <section className="workspace-center">
@@ -589,29 +607,31 @@ export function Workspace({
                         savePreferences(preferencesKey, snapshot.current);
                     }}
                   />
-                  {layout.showPreview && (
+                  {layout.previewVisible && (
                     <>
                       <ResizeHandle
                         onStart={() => layout.setPreviewWidth(dimensions.preview)}
                         onDelta={(delta) =>
                           layout.setPreviewWidth((v) => Math.max(260, Math.min(720, v - delta)))
                         }
+                        onReset={() => layout.setPreviewWidth(420)}
                       />
                       <aside
                         className="workspace-right-panel"
                         style={{ width: dimensions.preview }}
                       >
-                        {(agentOwner || (databaseOpen && editable)) && (
+                        {(agentOwner || editable) && (
                           <Tabs
                             label="Workspace right panel"
                             value={selectedRightPanel}
-                            onChange={setRightPanel}
+                            onChange={(panel) => {
+                              setRightPanel(panel);
+                              layout.setShowPreview(true);
+                            }}
                             items={[
                               { id: 'preview', label: 'Preview' },
                               ...(agentOwner ? [{ id: 'agent' as const, label: 'Agent' }] : []),
-                              ...(databaseOpen && editable
-                                ? [{ id: 'database' as const, label: 'Database' }]
-                                : []),
+                              ...(editable ? [{ id: 'database' as const, label: 'Database' }] : []),
                             ]}
                           />
                         )}
@@ -625,6 +645,7 @@ export function Workspace({
                             width={dimensions.preview}
                             revision={previewRevision}
                             editable={editable}
+                            showTitle={!(agentOwner || editable)}
                             onRefresh={() => setPreviewRevision((v) => v + 1)}
                             onClose={() => layout.setShowPreview(false)}
                             onRetryReadiness={() =>
@@ -632,7 +653,7 @@ export function Workspace({
                             }
                           />
                         </div>
-                        {databaseOpen && editable && (
+                        {editable && databaseVisited && (
                           <div
                             className="workspace-right-content"
                             hidden={selectedRightPanel !== 'database'}
@@ -642,15 +663,7 @@ export function Workspace({
                               projectId={id}
                               owner={agentOwner}
                               revision={databaseRevision}
-                              onClose={() => {
-                                setDatabaseOpen(false);
-                                if (rightPanel === 'database')
-                                  setRightPanel(
-                                    lastFixedRightPanel === 'agent' && agentOwner
-                                      ? 'agent'
-                                      : 'preview',
-                                  );
-                              }}
+                              onClose={() => layout.setShowPreview(false)}
                             />
                           </div>
                         )}
@@ -678,6 +691,7 @@ export function Workspace({
                     onDelta={(delta) =>
                       layout.setTerminalHeight((v) => Math.max(100, Math.min(550, v - delta)))
                     }
+                    onReset={() => layout.setTerminalHeight(230)}
                   />
                 )}
                 <WorkspaceBottomPanel
@@ -705,22 +719,26 @@ export function Workspace({
                         />
                       ),
                     },
-                    {
-                      id: 'preparation',
-                      label: 'Preparation Logs',
-                      content: (
-                        <PreparationLogsPanel
-                          preparation={project.preparation}
-                          log={preparationLog}
-                          visible={layout.showTerminal && bottomPanelTab === 'preparation'}
-                          editable={editable}
-                          onRetry={async () => {
-                            await post(base + '/prepare');
-                            await load();
-                          }}
-                        />
-                      ),
-                    },
+                    ...(showPreparationTab
+                      ? [
+                          {
+                            id: 'preparation' as const,
+                            label: 'Preparation Logs',
+                            content: (
+                              <PreparationLogsPanel
+                                preparation={project.preparation}
+                                log={preparationLog}
+                                visible={layout.showTerminal && bottomPanelTab === 'preparation'}
+                                editable={editable}
+                                onRetry={async () => {
+                                  await post(base + '/prepare');
+                                  await load();
+                                }}
+                              />
+                            ),
+                          },
+                        ]
+                      : []),
                   ]}
                 />
               </section>
@@ -730,6 +748,8 @@ export function Workspace({
               connected={connected}
               status={editor.active ? status : ''}
               languageStatus={editor.active ? languageStatus : ''}
+              onProblems={() => layout.revealPane('problems')}
+              onStorage={() => setSettings(true)}
             />
           </>
         )}

@@ -5,6 +5,7 @@ import {
   useRef,
   useEffect,
   useLayoutEffect,
+  useId,
   type ReactNode,
   type CSSProperties,
 } from 'react';
@@ -86,9 +87,15 @@ export function UiProvider({ children }: { children: ReactNode }) {
   return (
     <Context.Provider value={{ notify, ask }}>
       {children}
-      <div className="toasts" aria-live="polite">
+      <div className="toasts">
         {toasts.map((t) => (
-          <div className={`toast ${t.kind}`} key={t.id}>
+          <div
+            className={`toast ${t.kind}`}
+            key={t.id}
+            role="status"
+            aria-live={t.kind === 'error' ? 'assertive' : 'polite'}
+            aria-atomic="true"
+          >
             {t.kind === 'error' ? <AlertCircle size={18} /> : <Check size={18} />}
             <span>{t.text}</span>
             <IconButton
@@ -352,6 +359,7 @@ export function Modal({
   small?: boolean;
   wide?: boolean;
 }) {
+  const titleId = useId();
   const ref = useRef<HTMLDivElement>(null);
   const close = useRef(onClose);
   close.current = onClose;
@@ -445,10 +453,12 @@ export function Modal({
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
-        aria-label={title}
+        aria-labelledby={titleId}
       >
         <header className="modal-header">
-          <h2 title={title}>{title}</h2>
+          <h2 id={titleId} title={title}>
+            {title}
+          </h2>
           <IconButton label="Close dialog" icon={<X size={18} />} onClick={onClose} />
         </header>
         {children}
@@ -475,8 +485,8 @@ function focusable(root: HTMLElement) {
 }
 export function Spinner({ label = 'Loading…' }: { label?: string }) {
   return (
-    <div className="loading">
-      <Loader2 size={20} className="spin" />
+    <div className="loading" role="status" aria-live="polite" aria-atomic="true">
+      <Loader2 size={20} className="spin" aria-hidden="true" />
       <span>{label}</span>
     </div>
   );
@@ -507,6 +517,8 @@ export function Avatar({ name, size = 28 }: { name: string; size?: number }) {
   return (
     <span
       className="avatar"
+      role="img"
+      aria-label={name}
       style={{ width: size, height: size, fontSize: Math.round(size * 0.37) }}
       title={name}
     >

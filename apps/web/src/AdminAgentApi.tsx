@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { GlobalAgentApiSettings } from '@repellet/shared';
 import { api, post, put, errorMessage } from './api';
-import { Banner, Button, Field, Section, Spinner, useUi } from './ui';
+import { Banner, Button, Field, LoadError, Section, Spinner, useUi } from './ui';
 import { useAsyncAction } from './components/useAsyncAction';
 
 export function AdminAgentApi() {
@@ -40,17 +40,17 @@ export function AdminAgentApi() {
       }
     });
   if (!settings)
-    return (
-      <>
-        {error ? <Banner tone="danger">{error}</Banner> : <Spinner />}
-        <Button onClick={load}>Retry</Button>
-      </>
+    return error ? (
+      <LoadError message={error} onRetry={() => void load()} />
+    ) : (
+      <Spinner label="Loading agent API settings…" />
     );
   const ids = [...new Set([...settings.models, ...settings.allowedModels])].sort();
   const connectionLoaded = loadedConnection === signature(settings.baseUrl, key, removeKey);
+  const needsModels = settings.enabled && !connectionLoaded;
   return (
     <form
-      className="resource-form"
+      className="resource-form agent-api-form"
       onSubmit={(event) => {
         event.preventDefault();
         void action(async () => {
@@ -70,11 +70,11 @@ export function AdminAgentApi() {
         });
       }}
     >
+      {error && <Banner tone="danger">{error}</Banner>}
       <Section
-        title="Global CLIProxyAPI"
+        title="Connection"
         description="When enabled, this connection replaces personal proxy configuration for everyone. ChatGPT sign-in remains available."
       >
-        {error && <Banner tone="danger">{error}</Banner>}
         <label className="agent-api-toggle">
           <input
             type="checkbox"
@@ -132,27 +132,39 @@ export function AdminAgentApi() {
             Remove saved key
           </label>
         )}
-        <Button
-          type="button"
-          disabled={busy || removeKey || !settings.baseUrl || !(key || settings.hasApiKey)}
-          onClick={() =>
-            action(async () => {
-              const result = await post<{ models: string[]; fetchedAt: number }>(
-                '/admin/agent-api/models',
-                {
-                  baseUrl: settings.baseUrl,
-                  ...(key ? { apiKey: key } : {}),
-                },
-              );
-              if (alive.current) {
-                setSettings({ ...settings, models: result.models, fetchedAt: result.fetchedAt });
-                setLoadedConnection(signature(settings.baseUrl, key, removeKey));
-              }
-            })
-          }
-        >
-          {settings.fetchedAt ? 'Refresh models' : 'Load models'}
-        </Button>
+        <div className="agent-api-connection-actions">
+          <Button
+            type="button"
+            disabled={busy || removeKey || !settings.baseUrl || !(key || settings.hasApiKey)}
+            onClick={() =>
+              action(async () => {
+                const result = await post<{ models: string[]; fetchedAt: number }>(
+                  '/admin/agent-api/models',
+                  {
+                    baseUrl: settings.baseUrl,
+                    ...(key ? { apiKey: key } : {}),
+                  },
+                );
+                if (alive.current) {
+                  setSettings({ ...settings, models: result.models, fetchedAt: result.fetchedAt });
+                  setLoadedConnection(signature(settings.baseUrl, key, removeKey));
+                }
+              })
+            }
+          >
+            {settings.fetchedAt ? 'Refresh models' : 'Load models'}
+          </Button>
+          {needsModels && (
+            <Banner tone="warning" compact role="status" className="agent-api-load-status">
+              Load models for this connection before saving.
+            </Banner>
+          )}
+        </div>
+      </Section>
+      <Section
+        title="Models"
+        description="Choose which discovered model IDs users may use through this connection."
+      >
         <Field label="Search model IDs">
           <input
             aria-label="Search model IDs"
@@ -188,20 +200,21 @@ export function AdminAgentApi() {
             })}
           {!ids.length && <p>Load models to choose which IDs users can access.</p>}
         </fieldset>
-        <p>
-          New models stay unchecked. If no models are selected, CLIProxyAPI cannot run agent turns.
-        </p>
-        {settings.enabled && !connectionLoaded && (
-          <p role="status">Load models for this connection before saving.</p>
-        )}
-        <Button
-          variant="primary"
-          type="submit"
-          busy={busy}
-          disabled={busy || (settings.enabled && (!connectionLoaded || removeKey))}
-        >
-          Save agent API settings
-        </Button>
+      </Section>
+      <Section
+        title="Access"
+        description="New models stay unchecked. If no models are selected, CLIProxyAPI cannot run agent turns."
+      >
+        <div className="form-actions start">
+          <Button
+            variant="primary"
+            type="submit"
+            busy={busy}
+            disabled={busy || (settings.enabled && (!connectionLoaded || removeKey))}
+          >
+            Save agent API settings
+          </Button>
+        </div>
       </Section>
     </form>
   );

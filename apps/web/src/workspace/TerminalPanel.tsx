@@ -1,6 +1,6 @@
 import { Play, Plus, X } from 'lucide-react';
 import type { TerminalInfo } from '@repellet/shared';
-import { IconButton, LoadError } from '../ui';
+import { Button, EmptyState, IconButton, LoadError } from '../ui';
 import { Terminal } from '../Terminal';
 export function TerminalPanel({
   projectId,
@@ -30,36 +30,7 @@ export function TerminalPanel({
   );
   return (
     <section className="terminal-panel">
-      <div className="terminal-content">
-        {error && <LoadError message={error} onRetry={onRetry} />}
-        {terminal ? (
-          <Terminal
-            key={terminal}
-            projectId={projectId}
-            id={terminal}
-            editable={editable}
-            visible={visible}
-          />
-        ) : (
-          <div className="terminal-empty">
-            {editable
-              ? 'Create a terminal with + to get started.'
-              : 'No terminal sessions are running.'}
-          </div>
-        )}
-      </div>
-      <aside className="terminal-sidebar" aria-label="Terminal sessions">
-        <div className="terminal-toolbar">
-          <span className="pane-title">Sessions</span>
-          {editable && (
-            <IconButton
-              size="sm"
-              label="New terminal"
-              icon={<Plus size={14} />}
-              onClick={onCreate}
-            />
-          )}
-        </div>
+      <div className="terminal-session-bar" aria-label="Terminal sessions">
         <div className="terminal-tabs">
           {orderedTerminals.map((t) => (
             <div
@@ -101,7 +72,37 @@ export function TerminalPanel({
             </div>
           ))}
         </div>
-      </aside>
+        {editable && (
+          <IconButton size="sm" label="New terminal" icon={<Plus size={14} />} onClick={onCreate} />
+        )}
+      </div>
+      <div className="terminal-content">
+        {error && <LoadError message={error} onRetry={onRetry} />}
+        {terminal ? (
+          <Terminal
+            key={terminal}
+            projectId={projectId}
+            id={terminal}
+            editable={editable}
+            visible={visible}
+          />
+        ) : (
+          <EmptyState
+            className="pane-empty terminal-empty"
+            title="No terminal"
+            description={
+              editable ? 'Create a terminal to get started.' : 'No terminal sessions are running.'
+            }
+            action={
+              editable ? (
+                <Button size="sm" variant="primary" onClick={onCreate}>
+                  New terminal
+                </Button>
+              ) : undefined
+            }
+          />
+        )}
+      </div>
     </section>
   );
 }

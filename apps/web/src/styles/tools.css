@@ -352,6 +352,12 @@
   max-height: 55vh;
   margin-top: var(--space-3);
   overflow: auto;
+  min-height: 120px;
+}
+.quick-open-results > .loading,
+.quick-open-results > .empty-state,
+.quick-open-results > .load-error {
+  margin: var(--space-4) auto;
 }
 .quick-open-results button {
   padding: var(--space-2) var(--space-3);

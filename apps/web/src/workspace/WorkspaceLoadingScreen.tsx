@@ -31,9 +31,7 @@ export function WorkspaceLoadingScreen({
             {error}
           </p>
         ) : (
-          <div role="status" aria-live="polite" aria-atomic="true">
-            <Spinner label={status} />
-          </div>
+          <Spinner label={status} />
         )}
         {slow && !error && (
           <p className="muted" role="status">

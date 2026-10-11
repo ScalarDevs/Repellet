@@ -1,12 +1,13 @@
 import { RefreshCw, ExternalLink, X } from 'lucide-react';
 import type { Project } from '@repellet/shared';
-import { PaneHeader, IconButton, Banner, Button } from '../ui';
+import { PaneHeader, IconButton, Banner, Button, EmptyState } from '../ui';
 export function PreviewPanel({
   project,
   url,
   width,
   revision,
   editable,
+  showTitle = true,
   onRefresh,
   onClose,
   onRetryReadiness,
@@ -16,35 +17,48 @@ export function PreviewPanel({
   width: number;
   revision: number;
   editable: boolean;
+  showTitle?: boolean;
   onRefresh: () => void;
   onClose: () => void;
   onRetryReadiness: () => void;
 }) {
   const { appStatus } = project;
   const available = !!url && appStatus.status === 'available';
+  const actions = (
+    <>
+      <IconButton
+        size="sm"
+        label="Refresh preview"
+        icon={<RefreshCw size={13} />}
+        onClick={onRefresh}
+      />
+      <IconButton
+        size="sm"
+        label="Open preview in new tab"
+        icon={<ExternalLink size={13} />}
+        onClick={() => window.open(url, '_blank', 'noopener')}
+        disabled={!url}
+      />
+      <IconButton size="sm" label="Close right panel" icon={<X size={14} />} onClick={onClose} />
+    </>
+  );
+  const emptyTitle =
+    appStatus.status === 'starting'
+      ? 'Starting app'
+      : appStatus.error
+        ? 'Preview unavailable'
+        : 'No preview yet';
+  const emptyDescription =
+    appStatus.status === 'starting'
+      ? 'Waiting for the app to become available…'
+      : appStatus.error || (editable ? 'Click Run to start your app.' : 'The app isn’t running.');
   return (
     <aside className="preview-pane" style={{ width }}>
-      <PaneHeader
-        title="Preview"
-        actions={
-          <>
-            <IconButton
-              size="sm"
-              label="Refresh preview"
-              icon={<RefreshCw size={13} />}
-              onClick={onRefresh}
-            />
-            <IconButton
-              size="sm"
-              label="Open preview in new tab"
-              icon={<ExternalLink size={13} />}
-              onClick={() => window.open(url, '_blank', 'noopener')}
-              disabled={!url}
-            />
-            <IconButton size="sm" label="Close preview" icon={<X size={14} />} onClick={onClose} />
-          </>
-        }
-      />
+      {showTitle ? (
+        <PaneHeader title="Preview" actions={actions} />
+      ) : (
+        <div className="pane-header preview-toolbar">{actions}</div>
+      )}
       <div className="preview-url">
         <span
           className={`preview-availability ${available ? 'available' : ''}`}
@@ -67,19 +81,18 @@ export function PreviewPanel({
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
         />
       ) : (
-        <div className="pane-empty">
-          <p>
-            {appStatus.status === 'starting'
-              ? 'Starting app…'
-              : appStatus.error ||
-                (editable ? 'Click Run to start your app.' : 'The app isn’t running.')}
-          </p>
-          {editable && appStatus.status === 'timeout' && (
-            <Button size="sm" onClick={onRetryReadiness}>
-              Retry readiness
-            </Button>
-          )}
-        </div>
+        <EmptyState
+          className="pane-empty"
+          title={emptyTitle}
+          description={emptyDescription}
+          action={
+            editable && appStatus.status === 'timeout' ? (
+              <Button size="sm" onClick={onRetryReadiness}>
+                Retry readiness
+              </Button>
+            ) : undefined
+          }
+        />
       )}
     </aside>
   );

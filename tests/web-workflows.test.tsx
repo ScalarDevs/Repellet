@@ -214,10 +214,10 @@ describe('explorer recovery and remapping', () => {
     );
     await flush();
     expect(screen.getByText('Listing failed')).toBeTruthy();
-    expect(screen.queryByText('No files yet.')).toBeNull();
+    expect(screen.queryByText('No files yet')).toBeNull();
     fireEvent.click(screen.getByText('Retry'));
     await flush();
-    expect(screen.getByText('No files yet.')).toBeTruthy();
+    expect(screen.getByText('No files yet')).toBeTruthy();
   });
   it('remaps expanded and selected directories before requesting their new paths', async () => {
     let renamed = false;
@@ -734,16 +734,18 @@ describe('field-level shared form validation', () => {
 });
 
 it('resizes from effective panel dimensions when requested sizes are constrained', async () => {
+  // Below 900px the right dock collapses so the explorer keeps its requested width.
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(800);
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
   const view = workspace();
   await flush();
   const explorer = view.container.querySelector('.explorer') as HTMLElement;
-  expect(explorer.style.width).toBe('205px');
+  expect(view.container.querySelector('.workspace-right-panel')).toBeNull();
+  expect(explorer.style.width).toBe('232px');
   fireEvent.keyDown(screen.getAllByRole('separator', { name: 'Resize panel' })[0], {
     key: 'ArrowLeft',
   });
-  expect(explorer.style.width).toBe('195px');
+  expect(explorer.style.width).toBe('222px');
   fireEvent.click(screen.getByLabelText('Toggle bottom panel'));
   const resize = screen.getByRole('separator', { name: 'Resize bottom panel' });
   for (let i = 0; i < 20; i++) fireEvent.keyDown(resize, { key: 'ArrowUp' });

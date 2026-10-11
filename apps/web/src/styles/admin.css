@@ -1,6 +1,13 @@
 .resource-form {
   max-width: 640px;
 }
+.section-help {
+  margin: calc(var(--space-3) * -1) 0 var(--space-4);
+  max-width: 560px;
+  font-size: var(--text-xs);
+  line-height: var(--leading-relaxed);
+  color: var(--color-text-subtle);
+}
 .form-actions.start {
   justify-content: flex-start;
 }
@@ -30,26 +37,41 @@
   }
 }
 
+.agent-api-form > .banner {
+  margin-bottom: var(--space-4);
+}
 .agent-api-toggle {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 18px;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+}
+.agent-api-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+.agent-api-load-status {
+  margin: 0;
+  flex: 1 1 220px;
+  font-size: var(--text-sm);
 }
 .agent-api-models {
   display: grid;
-  gap: 10px;
+  gap: var(--space-2);
   max-height: 360px;
   overflow: auto;
   border: 1px solid var(--color-border);
-  border-radius: 6px;
-  padding: 16px;
-  margin: 16px 0;
+  border-radius: var(--radius-md);
+  padding: var(--space-4);
+  margin: var(--space-4) 0 0;
 }
 .agent-api-models label {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--space-2);
   overflow-wrap: anywhere;
 }
 .agent-api-models small {

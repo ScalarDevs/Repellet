@@ -18,6 +18,13 @@
   grid-column: 1 / -1;
   margin-top: 0;
 }
+.env-link-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1) var(--space-3);
+  margin-top: var(--space-2);
+}
 .role-select {
   width: 110px;
   min-height: var(--control-h-sm);

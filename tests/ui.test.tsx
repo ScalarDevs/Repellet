@@ -3,7 +3,17 @@ import { useState } from 'react';
 import { describe, it, expect, afterEach, vi } from 'vitest';
 import { render, screen, fireEvent, cleanup, act } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { Menu, Modal, UiProvider, useUi, hasOpenDialog } from '../apps/web/src/ui';
+import {
+  Menu,
+  Modal,
+  UiProvider,
+  useUi,
+  hasOpenDialog,
+  Spinner,
+  Avatar,
+  Tabs,
+  TabPanel,
+} from '../apps/web/src/ui';
 afterEach(cleanup);
 function Dialogs() {
   const [outer, setOuter] = useState(false),
@@ -139,5 +149,79 @@ describe('menu keyboard interaction', () => {
     fireEvent.keyDown(document, { key: 'Tab' });
     expect(screen.queryByRole('menu')).toBeNull();
     expect(document.activeElement).toBe(trigger);
+  });
+});
+describe('shared accessibility semantics', () => {
+  it('names modals from the heading, announces spinners, and labels avatars', () => {
+    render(
+      <Modal title="Named dialog" onClose={() => {}}>
+        <Spinner label="Loading secrets…" />
+        <Avatar name="Owen Owner" />
+      </Modal>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'Named dialog' });
+    expect(dialog.getAttribute('aria-labelledby')).toBe(screen.getByRole('heading').id);
+    expect(dialog.getAttribute('aria-label')).toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('Loading secrets…');
+    expect(screen.getByRole('img', { name: 'Owen Owner' })).toBeTruthy();
+  });
+  it('wires Tabs aria-controls to TabPanel and uses assertive live regions for error toasts', async () => {
+    function Fixture() {
+      const [tab, setTab] = useState<'one' | 'two'>('one');
+      const ui = useUi();
+      return (
+        <>
+          <button onClick={() => ui.notify('Broken', 'error')}>Notify</button>
+          <button onClick={() => ui.notify('Saved', 'success')}>Succeed</button>
+          <Tabs
+            label="Sections"
+            value={tab}
+            onChange={setTab}
+            items={[
+              { id: 'one', label: 'One' },
+              { id: 'two', label: 'Two' },
+            ]}
+          >
+            <TabPanel>Panel {tab}</TabPanel>
+          </Tabs>
+        </>
+      );
+    }
+    render(
+      <UiProvider>
+        <Fixture />
+      </UiProvider>,
+    );
+    const one = screen.getByRole('tab', { name: 'One' });
+    const panel = screen.getByRole('tabpanel');
+    expect(panel.id).toBe(one.getAttribute('aria-controls'));
+    expect(panel.getAttribute('aria-labelledby')).toBe(one.id);
+    fireEvent.click(screen.getByText('Notify'));
+    expect(screen.getByText('Broken').closest('[aria-live]')?.getAttribute('aria-live')).toBe(
+      'assertive',
+    );
+    fireEvent.click(screen.getByText('Succeed'));
+    expect(screen.getByText('Saved').closest('[aria-live]')?.getAttribute('aria-live')).toBe(
+      'polite',
+    );
+  });
+  it('marks danger confirms with the danger button variant', async () => {
+    function Ask() {
+      const ui = useUi();
+      return (
+        <button
+          onClick={() => void ui.ask({ title: 'Disable account?', confirm: true, danger: true })}
+        >
+          Ask
+        </button>
+      );
+    }
+    render(
+      <UiProvider>
+        <Ask />
+      </UiProvider>,
+    );
+    fireEvent.click(screen.getByText('Ask'));
+    expect(screen.getByRole('button', { name: 'Confirm' }).className).toContain('danger');
   });
 });

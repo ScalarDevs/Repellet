@@ -37,10 +37,29 @@
   --color-warning: #c9ad7b;
   --color-warning-bg: #c9ad7b14;
   --color-warning-border: #c9ad7b40;
+  --color-warning-text: #e0cfa3;
   --color-danger: #d09595;
   --color-danger-solid: #b05a5a;
+  --color-danger-solid-hover: #c06868;
   --color-danger-bg: #bd646414;
   --color-danger-border: #bd646440;
+  --color-danger-text: #e3b4b4;
+  --color-on-danger: #ffffff;
+  --color-status-idle: #6a7380;
+
+  /* Toast surfaces (opaque; status *-bg tokens are translucent tints) */
+  --color-toast-error-bg: #2d2328;
+  --color-toast-error-border: #6e4c4c;
+  --color-toast-success-bg: #1f2c28;
+  --color-toast-success-border: #466453;
+  --color-toast-success-text: #b7d0bf;
+
+  /* Dense chrome one-offs */
+  --color-raised-hover: #292d35;
+  --color-border-hover: #49515e;
+  --color-avatar-bg: #2b3b42;
+  --color-avatar-border: #40545e;
+  --color-avatar-text: #a0c6cf;
 
   /* Syntax colors used by file icons and runtime glyphs */
   --syntax-keyword: #baa2d2;
@@ -88,13 +107,15 @@
   --radius-full: 999px;
 
   /* Sizing. The activity bar width and handle size are mirrored in workspaceState.ts. */
+  --control-h-xs: 24px;
   --control-h-sm: 28px;
   --control-h: 34px;
   --pane-header-h: 36px;
   --workspace-header-h: 48px;
   --statusbar-h: 24px;
   --activity-bar-w: 45px;
-  --resize-handle: 4px;
+  --resize-handle: 5px;
+  --resize-handle-hit: 10px;
 
   /* Elevation, layers, motion */
   --shadow-sm: 0 1px 3px #0003;
@@ -106,4 +127,5 @@
   --z-modal: 100;
   --z-toast: 200;
   --duration-fast: 0.15s;
+  --duration-medium: 0.2s;
 }
