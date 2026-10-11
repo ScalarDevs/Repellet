@@ -7,6 +7,8 @@ import {
   ListChecks,
   Paperclip,
   ChevronsUpDown,
+  AlertCircle,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   projectAgentEvent,
@@ -21,7 +23,7 @@ import {
 } from '@repellet/shared';
 import type { Thread, Model } from '@repellet/agent-protocol';
 import { api, post, wsUrl, errorMessage } from './api';
-import { AgentSettings } from './AgentSettings';
+import { AgentSettings, AgentQuickSettings } from './AgentSettings';
 import { agentTranscript } from './agentTranscript';
 import { AgentTranscriptItems } from './AgentItems';
 import { useAgentAttachments, AgentDraftAttachments, attachmentAccept } from './AgentAttachments';
@@ -58,6 +60,7 @@ export function AgentPanel({
   const [models, setModels] = useState<Model[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fullSettingsOpen, setFullSettingsOpen] = useState(false);
   const [runSettingsOpen, setRunSettingsOpen] = useState(false);
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState('');
@@ -91,6 +94,18 @@ export function AgentPanel({
   const scrollPositions = useRef(new Map<string, number>());
   const drafts = useRef(new Map<string, string>());
   const restored = useRef(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!runSettingsOpen) return;
+    function handleClickOutside(event: MouseEvent) {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setRunSettingsOpen(false);
+      }
+    }
+    document.addEventListener('pointerdown', handleClickOutside);
+    return () => document.removeEventListener('pointerdown', handleClickOutside);
+  }, [runSettingsOpen]);
   useLayoutEffect(() => {
     const element = transcript.current;
     setText(drafts.current.get(selectedThread) || '');
@@ -845,6 +860,7 @@ export function AgentPanel({
                 </Button>
                 {runSettingsOpen && (
                   <div
+                    ref={popoverRef}
                     className="agent-run-settings-popover"
                     id="agent-run-settings"
                     role="group"
@@ -856,96 +872,140 @@ export function AgentPanel({
                       }
                     }}
                   >
-                    <select
-                      aria-label="Agent API"
-                      value={agentApi}
-                      disabled={unavailable || !!active}
-                      onChange={(e) => {
-                        const api = e.target.value as AgentApi;
-                        changeRunSettings({
-                          api,
-                          model: settings?.defaults[api].model || '',
-                          effort: settings?.defaults[api].effort || '',
-                        });
-                      }}
-                    >
-                      <option value="chatgpt" disabled={!settings?.availability.chatgpt.available}>
-                        ChatGPT Auth
-                        {!settings?.availability.chatgpt.available ? ' (sign-in required)' : ''}
-                      </option>
-                      <option
-                        value="cliproxyapi"
-                        disabled={!settings?.availability.cliproxyapi.available}
+                    <div className="agent-run-settings-header">
+                      <span className="agent-run-settings-title">
+                        <SlidersHorizontal size={13} aria-hidden="true" />
+                        Run Settings
+                      </span>
+                    </div>
+                    <div className="agent-run-settings-field">
+                      <label htmlFor="agent-run-api" className="agent-run-settings-label">
+                        API
+                      </label>
+                      <select
+                        id="agent-run-api"
+                        aria-label="Agent API"
+                        value={agentApi}
+                        disabled={unavailable || !!active}
+                        onChange={(e) => {
+                          const api = e.target.value as AgentApi;
+                          changeRunSettings({
+                            api,
+                            model: settings?.defaults[api].model || '',
+                            effort: settings?.defaults[api].effort || '',
+                          });
+                        }}
                       >
-                        {settings?.proxySource === 'global' ? 'CLIProxyAPI' : 'Custom API'}
-                        {!settings?.availability.cliproxyapi.available ? ' (unavailable)' : ''}
-                      </option>
-                    </select>
+                        <option value="chatgpt" disabled={!settings?.availability.chatgpt.available}>
+                          ChatGPT Auth
+                          {!settings?.availability.chatgpt.available ? ' (sign-in required)' : ''}
+                        </option>
+                        <option
+                          value="cliproxyapi"
+                          disabled={!settings?.availability.cliproxyapi.available}
+                        >
+                          {settings?.proxySource === 'global' ? 'CLIProxyAPI' : 'Custom API'}
+                          {!settings?.availability.cliproxyapi.available ? ' (unavailable)' : ''}
+                        </option>
+                      </select>
+                    </div>
                     {settings && !settings.availability[agentApi].available && (
-                      <p role="status">{settings.availability[agentApi].reason}</p>
+                      <div className="agent-run-settings-status" role="status">
+                        <AlertCircle size={14} className="agent-run-settings-status-icon" aria-hidden="true" />
+                        <span>{settings.availability[agentApi].reason}</span>
+                      </div>
                     )}
-                    {catalogError && <p role="alert">{catalogError}</p>}
-                    <select
-                      aria-label="Agent model"
-                      value={model}
-                      disabled={unavailable || catalogLoading || !!active}
-                      onChange={(e) =>
-                        changeRunSettings({
-                          api: agentApi,
-                          model: e.target.value,
-                          effort:
-                            models.find((model) => model.model === e.target.value)
-                              ?.defaultReasoningEffort || '',
-                        })
-                      }
-                    >
-                      <option value="">Provider default</option>
-                      {model && !models.some((item) => item.model === model) && (
-                        <option value={model} disabled>
-                          {model} (unavailable)
-                        </option>
-                      )}
-                      {models.map((model) => (
-                        <option key={model.id} value={model.model}>
-                          {model.displayName}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      aria-label="Agent effort"
-                      value={effort}
-                      disabled={unavailable || catalogLoading || !!active}
-                      onChange={(e) =>
-                        changeRunSettings({ api: agentApi, model, effort: e.target.value })
-                      }
-                    >
-                      <option value="">Provider default</option>
-                      {effort &&
-                        !models
+                    {catalogError && (
+                      <div className="agent-run-settings-error" role="alert">
+                        <AlertCircle size={14} className="agent-run-settings-error-icon" aria-hidden="true" />
+                        <span>{catalogError}</span>
+                      </div>
+                    )}
+                    <div className="agent-run-settings-field">
+                      <label htmlFor="agent-run-model" className="agent-run-settings-label">
+                        Model
+                      </label>
+                      <select
+                        id="agent-run-model"
+                        aria-label="Agent model"
+                        value={model}
+                        disabled={unavailable || catalogLoading || !!active}
+                        onChange={(e) =>
+                          changeRunSettings({
+                            api: agentApi,
+                            model: e.target.value,
+                            effort:
+                              models.find((model) => model.model === e.target.value)
+                                ?.defaultReasoningEffort || '',
+                          })
+                        }
+                      >
+                        <option value="">Provider default</option>
+                        {model && !models.some((item) => item.model === model) && (
+                          <option value={model} disabled>
+                            {model} (unavailable)
+                          </option>
+                        )}
+                        {models.map((model) => (
+                          <option key={model.id} value={model.model}>
+                            {model.displayName}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="agent-run-settings-field">
+                      <label htmlFor="agent-run-effort" className="agent-run-settings-label">
+                        Reasoning Effort
+                      </label>
+                      <select
+                        id="agent-run-effort"
+                        aria-label="Agent effort"
+                        value={effort}
+                        disabled={unavailable || catalogLoading || !!active}
+                        onChange={(e) =>
+                          changeRunSettings({ api: agentApi, model, effort: e.target.value })
+                        }
+                      >
+                        <option value="">Provider default</option>
+                        {effort &&
+                          !models
+                            .find(
+                              (item) =>
+                                item.model ===
+                                (model || models.find((entry) => entry.isDefault)?.model),
+                            )
+                            ?.supportedReasoningEfforts.some(
+                              (option) => option.reasoningEffort === effort,
+                            ) && (
+                            <option value={effort} disabled>
+                              {effort} (unavailable)
+                            </option>
+                          )}
+                        {models
                           .find(
                             (item) =>
                               item.model ===
                               (model || models.find((entry) => entry.isDefault)?.model),
                           )
-                          ?.supportedReasoningEfforts.some(
-                            (option) => option.reasoningEffort === effort,
-                          ) && (
-                          <option value={effort} disabled>
-                            {effort} (unavailable)
-                          </option>
-                        )}
-                      {models
-                        .find(
-                          (item) =>
-                            item.model ===
-                            (model || models.find((entry) => entry.isDefault)?.model),
-                        )
-                        ?.supportedReasoningEfforts.map((option) => (
-                          <option key={option.reasoningEffort} value={option.reasoningEffort}>
-                            {option.reasoningEffort}
-                          </option>
-                        ))}
-                    </select>
+                          ?.supportedReasoningEfforts.map((option) => (
+                            <option key={option.reasoningEffort} value={option.reasoningEffort}>
+                              {option.reasoningEffort}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    <div className="agent-run-settings-footer">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => {
+                          setRunSettingsOpen(false);
+                          setSettingsOpen(true);
+                        }}
+                      >
+                        All agent settings →
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1010,8 +1070,22 @@ export function AgentPanel({
         </>
       )}
       {settingsOpen && (
-        <AgentSettings
+        <AgentQuickSettings
           onClose={() => setSettingsOpen(false)}
+          onOpenFullSettings={() => setFullSettingsOpen(true)}
+          onSaved={() => {
+            if (!selectedThread) {
+              selectionThread.current = null;
+              runSelections.current.delete('');
+            }
+            void api<Settings>('/agent/settings').then(setSettings);
+            setReconnectRevision((value) => value + 1);
+          }}
+        />
+      )}
+      {fullSettingsOpen && (
+        <AgentSettings
+          onClose={() => setFullSettingsOpen(false)}
           onSaved={() => {
             if (!selectedThread) {
               selectionThread.current = null;
