@@ -90,6 +90,20 @@ describe('color tokens', () => {
           `${t} on ${s}`,
         ).toBeGreaterThanOrEqual(4.5);
   });
+  it('keeps feedback and identity text above 4.5:1 on their surfaces', () => {
+    for (const [fg, bg] of [
+      ['warning-text', 'surface'],
+      ['danger-text', 'surface'],
+      ['toast-success-text', 'toast-success-bg'],
+      ['danger-text', 'toast-error-bg'],
+      ['avatar-text', 'avatar-bg'],
+      ['on-danger', 'danger-solid'],
+    ])
+      expect(
+        contrast(tokens['color-' + fg]!, tokens['color-' + bg]!),
+        `${fg} on ${bg}`,
+      ).toBeGreaterThanOrEqual(4.5);
+  });
   it('keeps subdued text rules above 4.5:1 on their surface', () => {
     const css = ['base', 'workspace']
       .map((n) => readFileSync(`apps/web/src/styles/${n}.css`, 'utf8'))
