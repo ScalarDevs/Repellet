@@ -1,6 +1,7 @@
 import {
   ensureDatabase,
   stopDatabase,
+  pauseDatabase,
   removeDatabase,
   databaseBytes,
   databaseUrl,
@@ -304,6 +305,17 @@ export async function stopWorkspace(id: string) {
     }
     await stopDatabase(id);
     return { state: 'stopped' };
+  });
+}
+export async function pauseWorkspace(id: string) {
+  return locked(id, async () => {
+    const current = await inspect(id);
+    if (current?.State.Running) {
+      await bridgeRequest(id, '/shutdown', 'POST').catch(() => {});
+      await docker.getContainer(current.Id).stop({ t: 10 });
+    }
+    await pauseDatabase(id);
+    return { state: 'paused' as const };
   });
 }
 export async function removeWorkspace(id: string) {

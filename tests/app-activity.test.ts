@@ -15,7 +15,7 @@ beforeEach(() => {
   vi.mocked(bridge).mockReset().mockResolvedValue([]);
 });
 
-it.each(['stopped', 'building', 'starting', 'stopping', 'failed'])(
+it.each(['stopped', 'building', 'starting', 'stopping', 'paused', 'failed'])(
   'does not query or start a %s workspace',
   async (state) => {
     expect(await mainAppRunning({ ...project, state })).toBe(false);

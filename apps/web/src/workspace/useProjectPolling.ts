@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { Project, PreparationJob } from '@repellet/shared';
-import { api, post, errorMessage } from '../api';
+import { api, post, errorMessage, type ApiError } from '../api';
 // Polls the project, its preparation log and (while building) its build log.
 export function useProjectPolling(id: string) {
   const base = `/projects/${id}`;
@@ -11,6 +11,7 @@ export function useProjectPolling(id: string) {
   const [preparationLog, setPreparationLog] = useState('');
   const [openPending, setOpenPending] = useState(true);
   const [openError, setOpenError] = useState('');
+  const [capacityError, setCapacityError] = useState<ApiError | null>(null);
   const openVersion = useRef(0);
   const opening = useRef(false);
   const controller = useRef<AbortController | null>(null);
@@ -87,10 +88,15 @@ export function useProjectPolling(id: string) {
     const request = ++openVersion.current;
     setOpenPending(true);
     setOpenError('');
+    setCapacityError(null);
     try {
       await post(base + '/open');
     } catch (e) {
-      if (mounted.current && request === openVersion.current) setOpenError(errorMessage(e));
+      if (mounted.current && request === openVersion.current) {
+        if (e && typeof e === 'object' && (e as { code?: string }).code === 'active-project-limit')
+          setCapacityError(e as Parameters<typeof setCapacityError>[0]);
+        setOpenError(errorMessage(e));
+      }
     } finally {
       if (mounted.current && request === openVersion.current) {
         opening.current = false;
@@ -128,5 +134,7 @@ export function useProjectPolling(id: string) {
     open,
     openPending,
     openError,
+    capacityError,
+    setCapacityError,
   };
 }

@@ -4,6 +4,9 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public completedFiles?: string[],
+    public code?: string,
+    public limit?: number,
+    public activeProjects?: { id: string; name: string; ownerId: string; state: string }[],
   ) {
     super(message);
   }
@@ -41,14 +44,20 @@ export async function api<T = any>(path: string, options: RequestInit = {}): Pro
   if (!response.ok) {
     let message = response.statusText;
     let completedFiles: string[] | undefined;
+    let code: string | undefined;
+    let limit: number | undefined;
+    let activeProjects: ApiError['activeProjects'];
     try {
       const details = await response.json();
       message = details.error || message;
       completedFiles = details.completedFiles;
+      code = details.code;
+      limit = details.limit;
+      activeProjects = details.activeProjects;
     } catch {}
     if (response.status === 401 && response.headers?.get('x-repellet-auth') === 'session')
       window.dispatchEvent(new Event('repellet:unauthorized'));
-    throw new ApiError(message, response.status, completedFiles);
+    throw new ApiError(message, response.status, completedFiles, code, limit, activeProjects);
   }
   return response.json();
 }

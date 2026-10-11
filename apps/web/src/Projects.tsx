@@ -197,7 +197,9 @@ export function Projects({ user, onOpen }: { user: User; onOpen: (id: string) =>
                   </span>
                 ))}
               </div>
-              <Status state={p.running === true ? 'running' : 'idle'} />
+              <Status
+                state={p.state === 'paused' ? 'paused' : p.running === true ? 'running' : 'idle'}
+              />
               <span className="updated">
                 {new Date(p.updatedAt).toLocaleDateString(undefined, {
                   month: 'short',
