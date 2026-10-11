@@ -297,7 +297,7 @@ export async function projectControl(
   if (input.operation === 'preparation_logs')
     return preparationLogsControl(projectId, userId, input.arguments.tailLines ?? 200);
   if (input.operation === 'prepare') return prepareControl(projectId, userId, signal);
-  const decide = async () => {
+  const decide = async (): Promise<ProjectControlResult> => {
     let status: ProjectControlStatus | undefined;
     let mutationStarted = false;
     try {
