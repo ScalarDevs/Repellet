@@ -6,6 +6,7 @@ import {
   installation,
   projectRunProfiles,
   workspaceProcesses,
+  jobs,
 } from '../apps/api/src/schema.js';
 
 const state = vi.hoisted(() => ({
@@ -14,6 +15,7 @@ const state = vi.hoisted(() => ({
   pending: [] as any[],
   live: [] as any[],
   outputs: new Map<string, any>(),
+  jobs: [] as any[],
   authorized: true,
   maintenance: false,
 }));
@@ -26,6 +28,7 @@ vi.mock('../apps/api/src/db.js', () => ({
           if (table === installation) return [{ maintenance: state.maintenance }];
           if (table === projectRunProfiles) return state.profile ? [state.profile] : [];
           if (table === workspaceProcesses) return state.pending;
+          if (table === jobs) return state.jobs || [];
           throw new Error('Unexpected table');
         },
       }),
@@ -52,12 +55,15 @@ vi.mock('../apps/api/src/preparation.js', () => ({
   assertPrepared: vi.fn(),
   probePreview: vi.fn(),
   cancelReadiness: vi.fn(),
+  preparationJobs: vi.fn(),
+  prepareProject: vi.fn(),
 }));
 vi.mock('../apps/api/src/processes.js', () => ({ startProfile: vi.fn(), stopProcess: vi.fn() }));
 vi.mock('../apps/api/src/collaboration.js', () => ({ flushProject: vi.fn() }));
 vi.mock('../apps/api/src/live.js', () => ({ emit: vi.fn() }));
 
 import { projectControl, projectControlRoutes } from '../apps/api/src/projectControl.js';
+import { serialize } from '../apps/api/src/lifecycle.js';
 import { bridge } from '../apps/api/src/worker.js';
 import { startProfile, stopProcess } from '../apps/api/src/processes.js';
 import { flushProject } from '../apps/api/src/collaboration.js';
@@ -66,6 +72,8 @@ import {
   assertPrepared,
   cancelReadiness,
   probePreview,
+  preparationJobs,
+  prepareProject,
 } from '../apps/api/src/preparation.js';
 import { projectAgentAccess } from '../apps/api/src/security.js';
 import type { ProjectControlInput } from '@repellet/agent-protocol';
@@ -90,9 +98,12 @@ beforeEach(() => {
   state.pending = [];
   state.live = [];
   state.outputs.clear();
+  state.jobs = [];
   state.authorized = true;
   state.maintenance = false;
   vi.mocked(mainRunProcessIds).mockResolvedValue(new Set(['run', 'main', 'second']));
+  vi.mocked(preparationJobs).mockImplementation(async () => state.jobs as any);
+  vi.mocked(prepareProject).mockResolvedValue(undefined);
   vi.mocked(bridge).mockImplementation(async (_id, path) => {
     if (path === '/terminals') return structuredClone(state.live);
     if (path === '/health')
@@ -129,6 +140,144 @@ it('reports live running state independently of failed preview readiness and ign
   expect(startProfile).not.toHaveBeenCalled();
   expect(flushProject).not.toHaveBeenCalled();
   expect(probePreview).not.toHaveBeenCalled();
+});
+
+it('returns the newest preparation job output even when the app is stopped', async () => {
+  state.project.state = 'stopped';
+  state.project.preparation = { status: 'failed', error: 'Install failed', scaffolded: true };
+  state.jobs = [
+    {
+      id: 'job',
+      state: 'failed',
+      step: 'installing',
+      error: 'Install failed',
+      log: 'first\nsecond\nthird',
+      startedAt: new Date('2026-01-01T00:00:00.000Z'),
+      finishedAt: new Date('2026-01-01T00:01:00.000Z'),
+    },
+  ];
+  expect(await control('preparation_logs', { tailLines: 2 })).toMatchObject({
+    outcome: 'preparation_logs',
+    preparation: {
+      status: 'failed',
+      error: 'Install failed',
+      job: { id: 'job', state: 'failed', step: 'installing' },
+      text: 'second\nthird',
+      truncated: true,
+    },
+  });
+  expect(bridge).not.toHaveBeenCalled();
+});
+
+it('starts asynchronous preparation through the same project operation lock', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation.status = 'required';
+  const result = await control('prepare');
+  expect(result).toMatchObject({ outcome: 'preparing', status: { workspaceState: 'running' } });
+  await vi.waitFor(() => expect(prepareProject).toHaveBeenCalledOnce());
+});
+
+it('reports preparation progress while prepareProject holds the workspace lock', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation = { status: 'required', error: null, scaffolded: true };
+  let release!: () => void;
+  vi.mocked(prepareProject).mockImplementation(() =>
+    serialize(
+      'project',
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    ),
+  );
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  state.project.preparation.status = 'installing';
+  try {
+    const status = await Promise.race([
+      control('status'),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('status waited on the workspace lock')), 200),
+      ),
+    ]);
+    expect(status).toMatchObject({
+      outcome: 'status',
+      status: { workspaceState: 'running', preparation: { status: 'installing' } },
+    });
+  } finally {
+    release();
+    await vi.mocked(prepareProject).mock.results[0]?.value;
+  }
+});
+
+it('keeps preparation reads and repeated triggers responsive while preparation is queued', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation.status = 'required';
+  vi.mocked(prepareProject).mockImplementation(
+    () => new Promise<void>((resolve) => setTimeout(resolve, 50)),
+  );
+  const [first, second, logs] = await Promise.all([
+    control('prepare'),
+    control('prepare'),
+    control('preparation_logs'),
+  ]);
+  expect(first.outcome).toBe('preparing');
+  expect(second.outcome).toBe('preparing');
+  expect(logs.outcome).toBe('no_preparation');
+  expect(prepareProject).toHaveBeenCalledTimes(2);
+});
+
+it('queues pending preparation when no prepare job is in flight', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation.status = 'pending';
+  state.jobs = [
+    {
+      id: 'old',
+      state: 'failed',
+      step: 'installing',
+      error: 'Install failed',
+      log: '',
+      startedAt: new Date('2026-01-01T00:00:00.000Z'),
+      finishedAt: new Date('2026-01-01T00:01:00.000Z'),
+    },
+  ];
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  await vi.waitFor(() => expect(prepareProject).toHaveBeenCalledOnce());
+
+  vi.mocked(prepareProject).mockClear();
+  state.project.setupCommand = '';
+  state.project.starterId = 'react-vite';
+  state.jobs = [];
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  await vi.waitFor(() => expect(prepareProject).toHaveBeenCalledOnce());
+});
+
+it('does not duplicate an active preparation or prepare projects without setup work', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation.status = 'installing';
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  state.project.preparation.status = 'files';
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  state.project.preparation.status = 'pending';
+  for (const jobState of ['pending', 'running']) {
+    state.jobs = [{ id: 'job', state: jobState, step: 'files' }];
+    expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  }
+  await Promise.resolve();
+  expect(prepareProject).not.toHaveBeenCalled();
+  state.project.setupCommand = '';
+  state.project.starterId = null;
+  state.project.preparation.status = 'ready';
+  expect(await control('prepare')).toMatchObject({ outcome: 'already_prepared' });
+});
+
+it.each(['stopped', 'paused'])('blocks preparation for a %s workspace', async (workspaceState) => {
+  state.project.state = workspaceState;
+  expect(await control('prepare')).toMatchObject({
+    outcome: 'error',
+    error: { code: 'prepare_blocked' },
+  });
+  expect(prepareProject).not.toHaveBeenCalled();
 });
 
 it.each(['stopped', 'building', 'starting', 'stopping', 'paused', 'failed'])(

@@ -9,6 +9,8 @@ type Context = {
   planMode: (threadId: string) => boolean;
 };
 
+const projectMutations = ['prepare', 'start', 'stop'] as const;
+
 /** Identity comes only from the worker-owned session, never tool arguments. No retries. */
 export async function forwardProjectControl(
   context: Context,
@@ -31,10 +33,13 @@ export async function forwardProjectControl(
   const active = context.active();
   if (!active || active.threadId !== threadId || active.turnId !== turnId)
     return fail('inactive_turn', 'Project tools require the current active agent turn.');
-  if (['start', 'stop'].includes(control.operation) && context.planMode(threadId))
+  if (
+    projectMutations.includes(control.operation as (typeof projectMutations)[number]) &&
+    context.planMode(threadId)
+  )
     return fail(
       'plan_mode',
-      'Plan mode is read-only. Leave plan mode before starting or stopping the app.',
+      'Plan mode is read-only. Leave plan mode before preparing the project or changing the app.',
     );
   if (signal.aborted) return fail('cancelled', 'Project request cancelled.');
   try {
@@ -50,8 +55,8 @@ export async function forwardProjectControl(
         response.status === 401 || response.status === 403
           ? 'access_denied'
           : 'control_unavailable',
-        'Project control is unavailable. Call project_status before retrying.',
-        ['start', 'stop'].includes(control.operation),
+        'Project control is unavailable. Call project_status or project_preparation_logs before retrying.',
+        projectMutations.includes(control.operation as (typeof projectMutations)[number]),
       );
     }
     const result = (await response.json()) as ProjectControlResult;
@@ -60,6 +65,10 @@ export async function forwardProjectControl(
       ![
         'status',
         'logs',
+        'preparation_logs',
+        'no_preparation',
+        'preparing',
+        'already_prepared',
         'started',
         'already_running',
         'stopped',
@@ -73,8 +82,8 @@ export async function forwardProjectControl(
   } catch {
     return fail(
       signal.aborted ? 'cancelled' : 'control_unavailable',
-      'Project request did not complete. Call project_status before retrying; never automatically replay start or stop.',
-      ['start', 'stop'].includes(control.operation),
+      'Project request did not complete. Call project_status or project_preparation_logs before retrying; never automatically replay preparation or app mutations.',
+      projectMutations.includes(control.operation as (typeof projectMutations)[number]),
     );
   }
 }

@@ -99,6 +99,8 @@ export function toolLabel(name: string): string {
       todo_edit: 'Update todos',
       project_status: 'Project status',
       project_logs: 'Project logs',
+      project_preparation_logs: 'Preparation logs',
+      project_prepare: 'Install dependencies',
       project_start: 'Start app',
       project_stop: 'Stop app',
       database_status: 'Database status',

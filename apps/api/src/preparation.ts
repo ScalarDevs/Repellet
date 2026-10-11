@@ -26,166 +26,173 @@ export async function preparationJobs(id: string) {
   return db
     .select()
     .from(jobs)
-    .where(eq(jobs.projectId, id))
+    .where(and(eq(jobs.projectId, id), eq(jobs.kind, 'prepare')))
     .orderBy(desc(jobs.createdAt))
     .limit(10);
 }
-export async function prepareProject(id: string) {
-  const generation = cancellations.get(id) || 0;
-  return serialize(id, async () => {
-    const [project] = await db.select().from(projects).where(eq(projects.id, id));
-    if (!project || project.state !== 'running') throw new Error('Open the workspace first');
-    const needsInstall = !!project.setupCommand.trim();
-    if (!needsInstall && !project.starterId) return;
-    if (!needsInstall && project.preparation.scaffolded && project.preparation.status === 'ready')
-      return;
-    await flushProject(id);
-    if (needsInstall && project.preparation.status === 'ready') {
-      const current = await bridge<{ fingerprint: string }>(id, '/fingerprint', 'POST', {
+/** Runs preparation while the caller already owns the workspace operation lock. */
+export async function prepareProjectWithinOperation(
+  id: string,
+  generation = cancellations.get(id) || 0,
+) {
+  const check = () => {
+    if ((cancellations.get(id) || 0) !== generation)
+      throw new Error('Preparation cancelled; retry when ready');
+  };
+  const [project] = await db.select().from(projects).where(eq(projects.id, id));
+  if (!project || project.state !== 'running') throw new Error('Open the workspace first');
+  const needsInstall = !!project.setupCommand.trim();
+  if (!needsInstall && !project.starterId) return;
+  if (!needsInstall && project.preparation.scaffolded && project.preparation.status === 'ready')
+    return;
+  await flushProject(id);
+  if (needsInstall && project.preparation.status === 'ready') {
+    const current = await bridge<{ fingerprint: string }>(id, '/fingerprint', 'POST', {
+      cwd: project.runConfig.cwd,
+      command: project.setupCommand,
+    });
+    if (current.fingerprint === project.preparation.fingerprint) return;
+  }
+  let preparation: Preparation = { ...project.preparation, error: null };
+  const steps: WorkflowStep[] = [
+    { name: 'files', startedAt: new Date().toISOString(), finishedAt: null, outcome: 'running' },
+  ];
+  const [job] = await db
+    .insert(jobs)
+    .values({
+      projectId: id,
+      kind: 'prepare',
+      state: 'running',
+      step: 'files',
+      steps,
+      startedAt: new Date(),
+    })
+    .returning();
+  if (!job) throw new Error('Could not create preparation job');
+  const finishStep = (outcome: WorkflowStep['outcome']) => {
+    const last = steps.at(-1);
+    if (last && !last.finishedAt) {
+      last.finishedAt = new Date().toISOString();
+      last.outcome = outcome;
+    }
+  };
+  const update = async (step: string, log?: string) => {
+    if (steps.at(-1)?.name !== step) {
+      finishStep('succeeded');
+      steps.push({
+        name: step,
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        outcome: 'running',
+      });
+    }
+    await db
+      .update(jobs)
+      .set({ step, steps, ...(log === undefined ? {} : { log: log.slice(-65536) }) })
+      .where(eq(jobs.id, job.id));
+    await emit(id, { type: 'preparation-log', jobId: job.id, step, log: log?.slice(-65536) });
+  };
+  try {
+    check();
+    if (project.starterId && !preparation.scaffolded) {
+      preparation.status = 'files';
+      await setPreparation(id, preparation);
+      const directory = fileURLToPath(
+        new URL(`../starters/${project.starterId}/${project.starterVersion}/`, import.meta.url),
+      );
+      const files: { path: string; content: string }[] = [];
+      async function collect(dir: string) {
+        for (const entry of await fs.readdir(path.join(directory, dir), {
+          withFileTypes: true,
+        })) {
+          const rel = path.posix.join(dir, entry.name);
+          if (entry.isDirectory()) await collect(rel);
+          else
+            files.push({
+              path: rel,
+              content: (await fs.readFile(path.join(directory, rel), 'utf8')).replaceAll(
+                '__REPELLET_PREVIEW_HOST__',
+                new URL(config.publicUrl).hostname,
+              ),
+            });
+        }
+      }
+      await collect('');
+      check();
+      await bridge(id, '/scaffold', 'POST', { files });
+      preparation.scaffolded = true;
+      await setPreparation(id, preparation);
+    }
+    check();
+    if (needsInstall) {
+      const { fingerprint } = await bridge<{ fingerprint: string }>(id, '/fingerprint', 'POST', {
         cwd: project.runConfig.cwd,
         command: project.setupCommand,
       });
-      if (current.fingerprint === project.preparation.fingerprint) return;
-    }
-    let preparation: Preparation = { ...project.preparation, error: null };
-    const steps: WorkflowStep[] = [
-      { name: 'files', startedAt: new Date().toISOString(), finishedAt: null, outcome: 'running' },
-    ];
-    const [job] = await db
-      .insert(jobs)
-      .values({
-        projectId: id,
-        kind: 'prepare',
-        state: 'running',
-        step: 'files',
-        steps,
-        startedAt: new Date(),
-      })
-      .returning();
-    if (!job) throw new Error('Could not create preparation job');
-    const finishStep = (outcome: WorkflowStep['outcome']) => {
-      const last = steps.at(-1);
-      if (last && !last.finishedAt) {
-        last.finishedAt = new Date().toISOString();
-        last.outcome = outcome;
-      }
-    };
-    const update = async (step: string, log?: string) => {
-      if (steps.at(-1)?.name !== step) {
-        finishStep('succeeded');
-        steps.push({
-          name: step,
-          startedAt: new Date().toISOString(),
-          finishedAt: null,
-          outcome: 'running',
-        });
-      }
-      await db
-        .update(jobs)
-        .set({ step, steps, ...(log === undefined ? {} : { log: log.slice(-65536) }) })
-        .where(eq(jobs.id, job.id));
-      await emit(id, { type: 'preparation-log', jobId: job.id, step, log: log?.slice(-65536) });
-    };
-    const check = () => {
-      if ((cancellations.get(id) || 0) !== generation)
-        throw new Error('Preparation cancelled; retry when ready');
-    };
-    try {
-      check();
-      if (project.starterId && !preparation.scaffolded) {
-        preparation.status = 'files';
+      if (preparation.fingerprint !== fingerprint || preparation.status !== 'ready') {
+        preparation.status = 'installing';
         await setPreparation(id, preparation);
-        const directory = fileURLToPath(
-          new URL(`../starters/${project.starterId}/${project.starterVersion}/`, import.meta.url),
-        );
-        const files: { path: string; content: string }[] = [];
-        async function collect(dir: string) {
-          for (const entry of await fs.readdir(path.join(directory, dir), {
-            withFileTypes: true,
-          })) {
-            const rel = path.posix.join(dir, entry.name);
-            if (entry.isDirectory()) await collect(rel);
-            else
-              files.push({
-                path: rel,
-                content: (await fs.readFile(path.join(directory, rel), 'utf8')).replaceAll(
-                  '__REPELLET_PREVIEW_HOST__',
-                  new URL(config.publicUrl).hostname,
-                ),
-              });
-          }
-        }
-        await collect('');
-        check();
-        await bridge(id, '/scaffold', 'POST', { files });
-        preparation.scaffolded = true;
-        await setPreparation(id, preparation);
-      }
-      check();
-      if (needsInstall) {
-        const { fingerprint } = await bridge<{ fingerprint: string }>(id, '/fingerprint', 'POST', {
-          cwd: project.runConfig.cwd,
+        await update('installing');
+        await bridge(id, '/preparation', 'POST', {
+          id: job.id,
           command: project.setupCommand,
+          cwd: project.runConfig.cwd,
         });
-        if (preparation.fingerprint !== fingerprint || preparation.status !== 'ready') {
-          preparation.status = 'installing';
-          await setPreparation(id, preparation);
-          await update('installing');
-          await bridge(id, '/preparation', 'POST', {
-            id: job.id,
-            command: project.setupCommand,
-            cwd: project.runConfig.cwd,
-          });
-          for (;;) {
-            check();
-            const status = await bridge<{ state: string; log: string; exitCode: number | null }>(
-              id,
-              `/preparation/${job.id}`,
-            );
-            await update('installing', status.log);
-            if (status.state !== 'running') {
-              if (status.state !== 'succeeded')
-                throw new Error(
-                  `Dependency installation ${status.state} (exit ${status.exitCode ?? 'unknown'}). See preparation logs.`,
-                );
-              break;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 500));
-          }
+        for (;;) {
           check();
-          preparation.fingerprint = (
-            await bridge<{ fingerprint: string }>(id, '/fingerprint', 'POST', {
-              cwd: project.runConfig.cwd,
-              command: project.setupCommand,
-            })
-          ).fingerprint;
+          const status = await bridge<{ state: string; log: string; exitCode: number | null }>(
+            id,
+            `/preparation/${job.id}`,
+          );
+          await update('installing', status.log);
+          if (status.state !== 'running') {
+            if (status.state !== 'succeeded')
+              throw new Error(
+                `Dependency installation ${status.state} (exit ${status.exitCode ?? 'unknown'}). See preparation logs.`,
+              );
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, 500));
         }
+        check();
+        preparation.fingerprint = (
+          await bridge<{ fingerprint: string }>(id, '/fingerprint', 'POST', {
+            cwd: project.runConfig.cwd,
+            command: project.setupCommand,
+          })
+        ).fingerprint;
       }
-      finishStep('succeeded');
-      preparation.status = 'ready';
-      await setPreparation(id, preparation);
-      await db
-        .update(jobs)
-        .set({ state: 'succeeded', step: 'ready', steps, finishedAt: new Date() })
-        .where(eq(jobs.id, job.id));
-    } catch (e) {
-      finishStep((cancellations.get(id) || 0) !== generation ? 'cancelled' : 'failed');
-      await bridge(id, '/preparation/cancel', 'POST').catch(() => {});
-      preparation.status = (cancellations.get(id) || 0) !== generation ? 'interrupted' : 'failed';
-      preparation.error = (e as Error).message;
-      await setPreparation(id, preparation);
-      await db
-        .update(jobs)
-        .set({
-          state: (cancellations.get(id) || 0) !== generation ? 'cancelled' : 'failed',
-          steps,
-          error: preparation.error,
-          finishedAt: new Date(),
-        })
-        .where(eq(jobs.id, job.id));
-      throw e;
     }
-  });
+    finishStep('succeeded');
+    preparation.status = 'ready';
+    await setPreparation(id, preparation);
+    await db
+      .update(jobs)
+      .set({ state: 'succeeded', step: 'ready', steps, finishedAt: new Date() })
+      .where(eq(jobs.id, job.id));
+  } catch (e) {
+    finishStep((cancellations.get(id) || 0) !== generation ? 'cancelled' : 'failed');
+    await bridge(id, '/preparation/cancel', 'POST').catch(() => {});
+    preparation.status = (cancellations.get(id) || 0) !== generation ? 'interrupted' : 'failed';
+    preparation.error = (e as Error).message;
+    await setPreparation(id, preparation);
+    await db
+      .update(jobs)
+      .set({
+        state: (cancellations.get(id) || 0) !== generation ? 'cancelled' : 'failed',
+        steps,
+        error: preparation.error,
+        finishedAt: new Date(),
+      })
+      .where(eq(jobs.id, job.id));
+    throw e;
+  }
+}
+
+/** Holds the workspace lock until installation finishes. Progress checks must not take that lock. */
+export async function prepareProject(id: string) {
+  const generation = cancellations.get(id) || 0;
+  return serialize(id, () => prepareProjectWithinOperation(id, generation));
 }
 export async function cancelReadiness(id: string) {
   probes.delete(id);
