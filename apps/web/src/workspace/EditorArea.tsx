@@ -162,6 +162,14 @@ export function EditorArea({
               Find in files
               <Shortcut keys={['mod', 'shift', 'F']} />
             </span>
+            <span>
+              Toggle terminal
+              <Shortcut keys={['mod', '`']} />
+            </span>
+            <span>
+              Toggle sidebar
+              <Shortcut keys={['mod', 'B']} />
+            </span>
             {editable && (
               <span>
                 Run project

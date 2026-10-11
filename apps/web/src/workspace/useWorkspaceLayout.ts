@@ -50,18 +50,28 @@ export function useWorkspaceLayout(saved: WorkspacePreferences, measureKey: unkn
     setPane(name);
     setShowSidebar(true);
   }
+  // Below ~900px collapse the right dock so the editor keeps usable width.
+  // Preferences stay intact so the dock returns when the viewport widens.
+  // Ignore zero/unmeasured widths (common in jsdom before layout) so panels stay open.
+  const measured = space.width > 0;
+  const narrowDock = measured && space.width < 900;
+  const sidebarVisible = showSidebar;
+  const previewVisible = showPreview && !narrowDock;
   const dimensions = panelDimensions(
     space.width,
     space.height,
     { explorer: leftWidth, preview: previewWidth, terminal: terminalHeight },
-    showPreview,
+    previewVisible,
     showTerminal,
   );
   return {
     pane,
     showSidebar,
+    setShowSidebar,
+    sidebarVisible,
     showPreview,
     setShowPreview,
+    previewVisible,
     showTerminal,
     setShowTerminal,
     leftWidth,

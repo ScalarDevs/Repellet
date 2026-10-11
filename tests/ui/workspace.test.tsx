@@ -375,9 +375,12 @@ it('opens preparation once per attempt, updates hidden logs, and preserves the t
 });
 
 it('reveals Terminal after Run from the preparation tab', async () => {
+  localStorage.setItem(
+    preferenceKey(user.id, 'project'),
+    JSON.stringify({ version: 1, showTerminal: true, bottomPanelTab: 'preparation' }),
+  );
   mount();
-  fireEvent.click(await screen.findByLabelText('Toggle bottom panel'));
-  fireEvent.click(screen.getByRole('tab', { name: 'Preparation Logs' }));
+  await screen.findByRole('tab', { name: 'Preparation Logs' });
   fireEvent.click(screen.getByRole('button', { name: 'Run', exact: true }));
   await waitFor(() =>
     expect(
@@ -389,8 +392,19 @@ it('reveals Terminal after Run from the preparation tab', async () => {
 it('keeps terminal creation and session selection independent of the panel tab', async () => {
   const list = [...terminals];
   const fallback = vi.mocked(api).getMockImplementation()!;
+  defaults({
+    ...project,
+    preparation: { ...project.preparation, status: 'pending' },
+  });
   vi.mocked(api).mockImplementation((path, options) =>
-    path.endsWith('/terminals') ? Promise.resolve(list) : fallback(path, options),
+    path.endsWith('/terminals')
+      ? Promise.resolve(list)
+      : path === '/projects/project'
+        ? Promise.resolve({
+            ...project,
+            preparation: { ...project.preparation, status: 'pending' },
+          })
+        : fallback(path, options),
   );
   vi.mocked(post).mockImplementation(async (path) => {
     if (path.endsWith('/terminals')) {
@@ -401,8 +415,9 @@ it('keeps terminal creation and session selection independent of the panel tab',
     return {} as any;
   });
   mount();
-  // Label queries also find controls inside the inert loading workspace.
-  fireEvent.click(await screen.findByRole('button', { name: 'Toggle bottom panel' }));
+  // Pending preparation auto-opens the bottom panel on Preparation Logs.
+  await screen.findByRole('tab', { name: 'Preparation Logs' });
+  fireEvent.click(screen.getByRole('tab', { name: 'Terminal', exact: true }));
   fireEvent.click(await screen.findByRole('button', { name: 'New terminal' }));
   // Change panel selection while the asynchronous create dialog is open.
   fireEvent.click(screen.getByRole('tab', { name: 'Preparation Logs' }));

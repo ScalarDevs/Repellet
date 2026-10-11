@@ -157,13 +157,16 @@ export function Workspace({
         ? 'agent'
         : 'preview';
   function selectRightPanel(panel: 'preview' | 'agent' | 'database') {
-    if (layout.showPreview && selectedRightPanel === panel) {
+    if (layout.previewVisible && selectedRightPanel === panel) {
       layout.setShowPreview(false);
       return;
     }
     setRightPanel(panel);
     layout.setShowPreview(true);
   }
+  const preparationStatus = project?.preparation.status || 'none';
+  const preparationRelevant = !['none', 'ready'].includes(preparationStatus);
+  const showPreparationTab = preparationRelevant || bottomPanelTab === 'preparation';
   const [quickOpen, setQuickOpen] = useState(false);
   const [settings, setSettings] = useState(false);
   const [peers, setPeers] = useState<{ id: string; name: string }[]>([]);
@@ -308,7 +311,8 @@ export function Workspace({
     const handler = (e: KeyboardEvent) => {
       if (!opened || e.defaultPrevented || hasOpenDialog()) return;
       const mod = e.metaKey || e.ctrlKey;
-      if (mod && e.key.toLowerCase() === 'p') {
+      const key = e.key.toLowerCase();
+      if (mod && key === 'p') {
         e.preventDefault();
         setQuickOpen(true);
       }
@@ -316,15 +320,31 @@ export function Workspace({
         e.preventDefault();
         void run();
       }
-      if (mod && e.key === 's') e.preventDefault();
-      if (mod && e.shiftKey && e.key.toLowerCase() === 'f') {
+      if (mod && key === 's') e.preventDefault();
+      if (mod && e.key === '`') {
+        e.preventDefault();
+        layout.setShowTerminal(!layout.showTerminal);
+      }
+      if (mod && !e.shiftKey && key === 'b') {
+        e.preventDefault();
+        layout.setShowSidebar(!layout.showSidebar);
+      }
+      if (mod && e.shiftKey && key === 'e') {
+        e.preventDefault();
+        layout.revealPane('files');
+      }
+      if (mod && e.shiftKey && key === 'f') {
         e.preventDefault();
         layout.revealPane('search');
+      }
+      if (mod && e.shiftKey && key === 'g') {
+        e.preventDefault();
+        layout.revealPane('git');
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [project, editable, busy, opened]);
+  }, [project, editable, busy, opened, layout.showTerminal, layout.showSidebar]);
   async function createTerminal() {
     try {
       const name = await ui.ask({
@@ -444,9 +464,9 @@ export function Workspace({
             <div className="workspace-body" ref={layout.bodyRef}>
               <ActivityBar
                 pane={layout.pane}
-                showSidebar={layout.showSidebar}
+                showSidebar={layout.sidebarVisible}
                 showTerminal={layout.showTerminal}
-                showRightPanel={layout.showPreview}
+                showRightPanel={layout.previewVisible}
                 rightPanel={selectedRightPanel}
                 onPane={layout.selectPane}
                 onToggleTerminal={() => layout.setShowTerminal(!layout.showTerminal)}
@@ -459,8 +479,8 @@ export function Workspace({
               />
               <aside
                 className="explorer"
-                hidden={!layout.showSidebar}
-                style={{ width: layout.showSidebar ? dimensions.explorer : 0 }}
+                hidden={!layout.sidebarVisible}
+                style={{ width: layout.sidebarVisible ? dimensions.explorer : 0 }}
               >
                 <div className="tool-pane" hidden={layout.pane !== 'files'}>
                   <FileTree
@@ -509,7 +529,7 @@ export function Workspace({
                   </div>
                 )}
               </aside>
-              {layout.showSidebar && (
+              {layout.sidebarVisible && (
                 <ResizeHandle
                   onStart={() => layout.setLeftWidth(dimensions.explorer)}
                   onDelta={(delta) =>
@@ -553,7 +573,7 @@ export function Workspace({
                         savePreferences(preferencesKey, snapshot.current);
                     }}
                   />
-                  {layout.showPreview && (
+                  {layout.previewVisible && (
                     <>
                       <ResizeHandle
                         onStart={() => layout.setPreviewWidth(dimensions.preview)}
@@ -665,22 +685,26 @@ export function Workspace({
                         />
                       ),
                     },
-                    {
-                      id: 'preparation',
-                      label: 'Preparation Logs',
-                      content: (
-                        <PreparationLogsPanel
-                          preparation={project.preparation}
-                          log={preparationLog}
-                          visible={layout.showTerminal && bottomPanelTab === 'preparation'}
-                          editable={editable}
-                          onRetry={async () => {
-                            await post(base + '/prepare');
-                            await load();
-                          }}
-                        />
-                      ),
-                    },
+                    ...(showPreparationTab
+                      ? [
+                          {
+                            id: 'preparation' as const,
+                            label: 'Preparation Logs',
+                            content: (
+                              <PreparationLogsPanel
+                                preparation={project.preparation}
+                                log={preparationLog}
+                                visible={layout.showTerminal && bottomPanelTab === 'preparation'}
+                                editable={editable}
+                                onRetry={async () => {
+                                  await post(base + '/prepare');
+                                  await load();
+                                }}
+                              />
+                            ),
+                          },
+                        ]
+                      : []),
                   ]}
                 />
               </section>
@@ -690,6 +714,8 @@ export function Workspace({
               connected={connected}
               status={editor.active ? status : ''}
               languageStatus={editor.active ? languageStatus : ''}
+              onProblems={() => layout.revealPane('problems')}
+              onStorage={() => setSettings(true)}
             />
           </>
         )}
