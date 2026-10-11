@@ -287,7 +287,7 @@ async function prepareControl(
   }
 }
 
-/** App-control decisions use fresh state after acquiring the same lock as the Run UI. */
+/** Start and stop use fresh state under the Run UI workspace lock. Status skips that lock so it can report progress while installation holds it. */
 export async function projectControl(
   projectId: string,
   userId: string,
@@ -297,7 +297,7 @@ export async function projectControl(
   if (input.operation === 'preparation_logs')
     return preparationLogsControl(projectId, userId, input.arguments.tailLines ?? 200);
   if (input.operation === 'prepare') return prepareControl(projectId, userId, signal);
-  return serialize(projectId, async () => {
+  const decide = async () => {
     let status: ProjectControlStatus | undefined;
     let mutationStarted = false;
     try {
@@ -409,7 +409,10 @@ export async function projectControl(
         mutationStarted,
       );
     }
-  });
+  };
+  // prepareProject holds the workspace lock for the whole install. Status must not queue behind it.
+  if (input.operation === 'status') return decide();
+  return serialize(projectId, decide);
 }
 
 export async function projectControlRoutes(app: FastifyInstance) {

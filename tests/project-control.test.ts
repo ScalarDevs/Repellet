@@ -63,6 +63,7 @@ vi.mock('../apps/api/src/collaboration.js', () => ({ flushProject: vi.fn() }));
 vi.mock('../apps/api/src/live.js', () => ({ emit: vi.fn() }));
 
 import { projectControl, projectControlRoutes } from '../apps/api/src/projectControl.js';
+import { serialize } from '../apps/api/src/lifecycle.js';
 import { bridge } from '../apps/api/src/worker.js';
 import { startProfile, stopProcess } from '../apps/api/src/processes.js';
 import { flushProject } from '../apps/api/src/collaboration.js';
@@ -174,6 +175,39 @@ it('starts asynchronous preparation through the same project operation lock', as
   const result = await control('prepare');
   expect(result).toMatchObject({ outcome: 'preparing', status: { workspaceState: 'running' } });
   await vi.waitFor(() => expect(prepareProject).toHaveBeenCalledOnce());
+});
+
+it('reports preparation progress while prepareProject holds the workspace lock', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation = { status: 'required', error: null, scaffolded: true };
+  let release!: () => void;
+  vi.mocked(prepareProject).mockImplementation(() =>
+    serialize(
+      'project',
+      () =>
+        new Promise<void>((resolve) => {
+          release = resolve;
+        }),
+    ),
+  );
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  await vi.waitFor(() => expect(release).toBeTypeOf('function'));
+  state.project.preparation.status = 'installing';
+  try {
+    const status = await Promise.race([
+      control('status'),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('status waited on the workspace lock')), 200),
+      ),
+    ]);
+    expect(status).toMatchObject({
+      outcome: 'status',
+      status: { workspaceState: 'running', preparation: { status: 'installing' } },
+    });
+  } finally {
+    release();
+    await vi.mocked(prepareProject).mock.results[0]?.value;
+  }
 });
 
 it('keeps preparation reads and repeated triggers responsive while preparation is queued', async () => {

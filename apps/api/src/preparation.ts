@@ -189,6 +189,7 @@ export async function prepareProjectWithinOperation(
   }
 }
 
+/** Holds the workspace lock until installation finishes. Progress checks must not take that lock. */
 export async function prepareProject(id: string) {
   const generation = cancellations.get(id) || 0;
   return serialize(id, () => prepareProjectWithinOperation(id, generation));
