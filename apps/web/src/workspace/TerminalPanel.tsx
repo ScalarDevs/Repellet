@@ -73,12 +73,7 @@ export function TerminalPanel({
           ))}
         </div>
         {editable && (
-          <IconButton
-            size="sm"
-            label="New terminal"
-            icon={<Plus size={14} />}
-            onClick={onCreate}
-          />
+          <IconButton size="sm" label="New terminal" icon={<Plus size={14} />} onClick={onCreate} />
         )}
       </div>
       <div className="terminal-content">
@@ -96,9 +91,7 @@ export function TerminalPanel({
             className="pane-empty terminal-empty"
             title="No terminal"
             description={
-              editable
-                ? 'Create a terminal to get started.'
-                : 'No terminal sessions are running.'
+              editable ? 'Create a terminal to get started.' : 'No terminal sessions are running.'
             }
             action={
               editable ? (

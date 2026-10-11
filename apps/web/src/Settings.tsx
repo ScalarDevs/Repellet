@@ -551,7 +551,9 @@ function Environment({
         {Object.entries(errors)
           .filter(([key]) => !variables?.some((v) => v.key === key))
           .map(([key, message]) => (
-            <FormError key={key}>{key === 'environment' ? message : `${key}: ${message}`}</FormError>
+            <FormError key={key}>
+              {key === 'environment' ? message : `${key}: ${message}`}
+            </FormError>
           ))}
         <div className="form-actions start">
           <Button
