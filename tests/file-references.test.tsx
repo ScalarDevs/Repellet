@@ -88,9 +88,40 @@ it('supports keyboard activation', async () => {
   expect(openFile.mock.calls).toEqual([['README.md'], ['README.md']]);
 });
 
+it('opens exact file tags wrapped in inline code', () => {
+  const openFile = vi.fn();
+  render(
+    <AgentItem
+      item={message('Edit `<file path="src/app.ts" />` when ready.')}
+      onOpenFile={openFile}
+    />,
+  );
+  const button = screen.getByRole('button', { name: 'src/app.ts', exact: true });
+  expect(button.title).toBe('Open file src/app.ts');
+  fireEvent.click(button);
+  expect(openFile).toHaveBeenCalledWith('src/app.ts');
+});
+
+it('opens inline-code file tags in plans', () => {
+  const openFile = vi.fn();
+  render(
+    <AgentItem
+      item={{
+        type: 'plan',
+        id: 'plan',
+        text: '[ ] Review `<file path="prisma/schema.prisma" />`',
+      }}
+      onOpenFile={openFile}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'prisma/schema.prisma', exact: true }));
+  expect(openFile).toHaveBeenCalledWith('prisma/schema.prisma');
+});
+
 it('keeps code and escaped syntax examples literal, including incomplete examples', () => {
   const text = [
-    '`<file path="inline.ts" />`',
+    '`File tag: <file path="inline.ts" />`',
+    '`<file path="../secret" />`',
     '',
     '```xml',
     '<file path="fenced.ts" />',
@@ -104,7 +135,7 @@ it('keeps code and escaped syntax examples literal, including incomplete example
   ].join('\n');
   const view = render(<AgentItem item={message(text)} onOpenFile={vi.fn()} />);
   expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['actual.ts']);
-  for (const path of ['inline.ts', 'fenced.ts', 'indented.ts', 'escaped.ts']) {
+  for (const path of ['inline.ts', '../secret', 'fenced.ts', 'indented.ts', 'escaped.ts']) {
     expect(view.container.textContent).toContain(`<file path="${path}" />`);
   }
   expect(references(parse(text))).toEqual(['actual.ts']);
@@ -162,6 +193,7 @@ it('keeps arbitrary HTML and unsafe links blocked and prevents placeholder imper
           '[bad](javascript:alert(1)) [fake](repellet-file-reference)',
           '',
           '[<file path="nested.ts" />](https://example.com)',
+          '[`<file path="nested-code.ts" />`](https://example.com)',
           '',
           '<file path="safe.ts" /> and [web](https://example.com)',
         ].join('\n'),
@@ -172,6 +204,7 @@ it('keeps arbitrary HTML and unsafe links blocked and prevents placeholder imper
   expect(screen.getAllByRole('button').map((button) => button.textContent)).toEqual(['safe.ts']);
   expect(view.container.querySelector('script, img, [onerror]')).toBeNull();
   expect(Array.from(view.container.querySelectorAll('a')).map((link) => link.href)).toEqual([
+    'https://example.com/',
     'https://example.com/',
     'https://example.com/',
   ]);
