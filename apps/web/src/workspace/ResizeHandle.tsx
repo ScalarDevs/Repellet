@@ -3,10 +3,12 @@ export function ResizeHandle({
   horizontal = false,
   onStart,
   onDelta,
+  onReset,
 }: {
   horizontal?: boolean;
   onStart: () => void;
   onDelta: (delta: number) => void;
+  onReset?: () => void;
 }) {
   const cleanup = useRef<(() => void) | null>(null);
   useEffect(() => () => cleanup.current?.(), []);
@@ -16,6 +18,7 @@ export function ResizeHandle({
       role="separator"
       aria-label={horizontal ? 'Resize bottom panel' : 'Resize panel'}
       aria-orientation={horizontal ? 'horizontal' : 'vertical'}
+      title={onReset ? 'Drag to resize · Double-click to reset' : undefined}
       tabIndex={0}
       onKeyDown={(e) => {
         const decrease = horizontal ? 'ArrowUp' : 'ArrowLeft';
@@ -26,6 +29,7 @@ export function ResizeHandle({
           onDelta(e.key === decrease ? -10 : 10);
         }
       }}
+      onDoubleClick={() => onReset?.()}
       onPointerDown={(e) => {
         e.preventDefault();
         cleanup.current?.();

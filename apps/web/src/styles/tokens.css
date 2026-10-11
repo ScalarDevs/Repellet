@@ -114,7 +114,8 @@
   --workspace-header-h: 48px;
   --statusbar-h: 24px;
   --activity-bar-w: 45px;
-  --resize-handle: 4px;
+  --resize-handle: 5px;
+  --resize-handle-hit: 10px;
 
   /* Elevation, layers, motion */
   --shadow-sm: 0 1px 3px #0003;

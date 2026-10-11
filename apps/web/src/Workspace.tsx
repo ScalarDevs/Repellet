@@ -515,6 +515,7 @@ export function Workspace({
                   onDelta={(delta) =>
                     layout.setLeftWidth((v) => Math.max(170, Math.min(480, v + delta)))
                   }
+                  onReset={() => layout.setLeftWidth(232)}
                 />
               )}
               <section className="workspace-center">
@@ -559,6 +560,7 @@ export function Workspace({
                         onDelta={(delta) =>
                           layout.setPreviewWidth((v) => Math.max(260, Math.min(720, v - delta)))
                         }
+                        onReset={() => layout.setPreviewWidth(420)}
                       />
                       <aside
                         className="workspace-right-panel"
@@ -635,6 +637,7 @@ export function Workspace({
                     onDelta={(delta) =>
                       layout.setTerminalHeight((v) => Math.max(100, Math.min(550, v - delta)))
                     }
+                    onReset={() => layout.setTerminalHeight(230)}
                   />
                 )}
                 <WorkspaceBottomPanel

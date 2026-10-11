@@ -264,7 +264,7 @@ it('shares picker uploads and disables mutations while uploading', async () => {
   await screen.findByRole('button', { name: 'b.txt' });
   const upload = container.querySelector('input[type=file]')!;
   fireEvent.change(upload, { target: { files: [file()] } });
-  await screen.findByText('Uploading 1 of 1…');
+  await screen.findByText('Uploading 1/1…');
   expect(row('New file').hasAttribute('disabled')).toBe(true);
   expect(row('a.txt').getAttribute('draggable')).toBe('false');
   fireEvent.drop(row('other'), { dataTransfer: transfer([file()]) });
@@ -331,19 +331,19 @@ it('disables drag and drop for viewers', async () => {
   fireEvent.drop(row('src'), { dataTransfer: internal('a.txt') });
   expect(post).not.toHaveBeenCalled();
 });
-it('expands hovered folders after 1500 ms and clears feedback on cancellation', async () => {
+it('expands hovered folders after 500 ms and clears feedback on cancellation', async () => {
   await tree();
   vi.useFakeTimers();
   const data = transfer([file()]);
   fireEvent.dragOver(row('src'), { dataTransfer: data });
   expect(screen.getByRole('status').textContent).toBe('Upload to src');
-  await act(async () => vi.advanceTimersByTime(1499));
+  await act(async () => vi.advanceTimersByTime(499));
   expect(row('src').getAttribute('aria-expanded')).toBe('false');
   await act(async () => vi.advanceTimersByTime(1));
   expect(row('src').getAttribute('aria-expanded')).toBe('true');
   fireEvent.dragOver(row('other'), { dataTransfer: data });
   fireEvent.keyDown(window, { key: 'Escape' });
-  await act(async () => vi.advanceTimersByTime(1500));
+  await act(async () => vi.advanceTimersByTime(500));
   expect(row('other').getAttribute('aria-expanded')).toBe('false');
   expect(screen.queryByRole('status')).toBeNull();
 });
@@ -502,14 +502,14 @@ it('preserves hover when crossing icons and labels, including null related targe
   fireEvent.dragStart(row('a.txt'), { dataTransfer: data });
   fireEvent.dragEnter(folder, { dataTransfer: data });
   fireEvent.dragOver(icon, { dataTransfer: data });
-  await act(async () => vi.advanceTimersByTime(750));
+  await act(async () => vi.advanceTimersByTime(250));
   fireEvent.dragEnter(label, { dataTransfer: data });
   fireEvent.dragLeave(icon, { dataTransfer: data, relatedTarget: label });
   hitTest(label);
   fireEvent.dragLeave(label, { dataTransfer: data, relatedTarget: null });
   fireEvent.dragOver(label, { dataTransfer: data });
   expect(folder.classList.contains('drop-target')).toBe(true);
-  await act(async () => vi.advanceTimersByTime(750));
+  await act(async () => vi.advanceTimersByTime(250));
   expect(folder.getAttribute('aria-expanded')).toBe('true');
   for (let i = 0; i < 5; i++) fireEvent.dragOver(folder, { dataTransfer: data });
   await act(async () => vi.advanceTimersByTime(3000));
@@ -522,10 +522,10 @@ it('cancels hover on a true exit and preserves the source for re-entry', async (
   fireEvent.dragStart(row('a.txt'), { dataTransfer: data });
   fireEvent.dragEnter(row('src'), { dataTransfer: data });
   fireEvent.dragOver(row('src'), { dataTransfer: data });
-  await act(async () => vi.advanceTimersByTime(750));
+  await act(async () => vi.advanceTimersByTime(250));
   hitTest(null);
   fireEvent.dragLeave(row('src'), { dataTransfer: data });
-  await act(async () => vi.advanceTimersByTime(1500));
+  await act(async () => vi.advanceTimersByTime(500));
   expect(row('src').getAttribute('aria-expanded')).toBe('false');
   expect(screen.queryByRole('status')).toBeNull();
   fireEvent.dragEnter(row('other'), { dataTransfer: data });
@@ -534,7 +534,7 @@ it('cancels hover on a true exit and preserves the source for re-entry', async (
   // An outside dragover also handles exits whose dragleave was missed by the browser.
   fireEvent.dragOver(container, { dataTransfer: data });
   expect(screen.queryByRole('status')).toBeNull();
-  await act(async () => vi.advanceTimersByTime(1500));
+  await act(async () => vi.advanceTimersByTime(500));
   expect(row('other').getAttribute('aria-expanded')).toBe('false');
 });
 it('highlights the actual parent when hovering file rows', async () => {
@@ -740,11 +740,11 @@ it('cancels pending expansion when switching to an invalid destination', async (
   const data = transfer();
   fireEvent.dragStart(row('a.txt'), { dataTransfer: data });
   fireEvent.dragOver(row('src'), { dataTransfer: data });
-  await act(async () => vi.advanceTimersByTime(750));
+  await act(async () => vi.advanceTimersByTime(250));
   fireEvent.dragOver(row('Workspace root'), { dataTransfer: data });
   expect(data.dropEffect).toBe('none');
   expect(screen.queryByRole('status')).toBeNull();
-  await act(async () => vi.advanceTimersByTime(1500));
+  await act(async () => vi.advanceTimersByTime(500));
   expect(row('src').getAttribute('aria-expanded')).toBe('false');
   fireEvent.drop(row('Workspace root'), { dataTransfer: data });
   expect(post).not.toHaveBeenCalled();
