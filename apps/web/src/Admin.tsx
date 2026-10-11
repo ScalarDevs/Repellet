@@ -132,9 +132,14 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
         ]}
       >
         <TabPanel>
-          {tab === 'agent-apis' && <AdminAgentApi />}
-          {loadError && <LoadError message={loadError} onRetry={load} />}
-          {loading && <Spinner label="Loading administration…" />}
+          {tab === 'agent-apis' ? (
+            <AdminAgentApi />
+          ) : (
+            <>
+              {loadError && <LoadError message={loadError} onRetry={load} />}
+              {loading && <Spinner label="Loading administration…" />}
+            </>
+          )}
           {!loading && tab === 'people' && (
             <Section
               title={`People (${users.length})`}
@@ -210,8 +215,13 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
               >
                 <Section
                   title="Workspace limits"
-                  description="Defaults apply to all projects and update running containers. CPU and memory are enforced by Docker. Storage is measured periodically, so terminal writes can briefly exceed it; over-limit projects suspend execution but stay available for cleanup."
+                  description="Defaults apply to all projects and update running containers."
                 >
+                  <p className="section-help">
+                    CPU and memory are enforced by Docker. Storage is measured periodically, so
+                    terminal writes can briefly exceed it; over-limit projects suspend execution but
+                    stay available for cleanup.
+                  </p>
                   <FormRow columns={2}>
                     {limitFields.map(([key, label, min, max, step]) => (
                       <Field key={key} label={label}>

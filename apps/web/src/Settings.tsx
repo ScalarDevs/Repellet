@@ -477,12 +477,16 @@ function Environment({
         )}
         {variables === null ? (
           loadError ? null : (
-            <Spinner />
+            <Spinner label="Loading variables…" />
           )
         ) : (
           <div className="env-list">
             {variables.map((v, i) => {
-              const errorId = errors[v.key] ? `env-error-${i}` : undefined;
+              const rowError = errors[v.key];
+              // Only the first row with a key shows that key's message (avoids duplicates).
+              const showRowError =
+                !!rowError && variables.findIndex((entry) => entry.key === v.key) === i;
+              const errorId = showRowError ? `env-error-${i}` : undefined;
               return (
                 <div className="env-row" key={i}>
                   <input
@@ -490,7 +494,7 @@ function Environment({
                     disabled={busy}
                     required
                     pattern="[A-Za-z_][A-Za-z0-9_]*"
-                    aria-invalid={!!errors[v.key]}
+                    aria-invalid={!!showRowError}
                     aria-describedby={errorId}
                     aria-label={`Variable name ${i + 1}`}
                     value={v.key}
@@ -501,7 +505,7 @@ function Environment({
                     className="mono-input"
                     disabled={busy}
                     maxLength={32768}
-                    aria-invalid={!!errors[v.key]}
+                    aria-invalid={!!showRowError}
                     aria-describedby={errorId}
                     aria-label={`Variable value ${i + 1}`}
                     readOnly={v.original === databaseVariableName}
@@ -521,9 +525,9 @@ function Environment({
                     disabled={busy || v.original === databaseVariableName}
                     onClick={() => setVariables((v) => v!.filter((_, n) => n !== i))}
                   />
-                  {errors[v.key] && (
+                  {showRowError && (
                     <p className="field-error" role="alert" id={errorId}>
-                      {errors[v.key]}
+                      {rowError}
                     </p>
                   )}
                 </div>
@@ -531,23 +535,23 @@ function Environment({
             })}
           </div>
         )}
-        <Button variant="link" disabled={busy} onClick={() => void load()}>
-          Reload variables
-        </Button>
-        <Button
-          variant="link"
-          disabled={!loaded || busy || variables!.length >= 100}
-          onClick={() => setVariables((v) => [...(v || []), { key: '', value: '' }])}
-        >
-          <Plus size={14} />
-          Add variable
-        </Button>
+        <div className="env-link-actions" role="group" aria-label="Variable actions">
+          <Button variant="link" disabled={busy} onClick={() => void load()}>
+            Reload variables
+          </Button>
+          <Button
+            variant="link"
+            disabled={!loaded || busy || variables!.length >= 100}
+            onClick={() => setVariables((v) => [...(v || []), { key: '', value: '' }])}
+          >
+            <Plus size={14} />
+            Add variable
+          </Button>
+        </div>
         {Object.entries(errors)
           .filter(([key]) => !variables?.some((v) => v.key === key))
           .map(([key, message]) => (
-            <FormError key={key}>
-              {key}: {message}
-            </FormError>
+            <FormError key={key}>{key === 'environment' ? message : `${key}: ${message}`}</FormError>
           ))}
         <div className="form-actions start">
           <Button

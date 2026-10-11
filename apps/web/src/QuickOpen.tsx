@@ -48,6 +48,7 @@ export function QuickOpen({
       setError(errorMessage(e));
     }
   }
+  const loading = paths === null && !error;
   const results = (paths || [])
     .filter((path) =>
       query
@@ -69,6 +70,7 @@ export function QuickOpen({
         aria-label="Search file paths"
         value={query}
         placeholder="Search relative paths…"
+        disabled={loading}
         onChange={(e) => {
           setQuery(e.target.value);
           setSelected(0);
@@ -87,11 +89,17 @@ export function QuickOpen({
           }
         }}
         aria-controls="quick-open-results"
+        aria-busy={loading || undefined}
         aria-activedescendant={results[selected] ? `quick-file-${selected}` : undefined}
       />
       {error && <LoadError message={error} onRetry={() => void retry()} />}
-      {paths === null && !error && <Spinner label="Loading file index…" />}
-      <div className="quick-open-results" id="quick-open-results" role="listbox">
+      <div
+        className="quick-open-results"
+        id="quick-open-results"
+        role="listbox"
+        aria-busy={loading || undefined}
+      >
+        {loading && <Spinner label="Loading file index…" />}
         {results.map((path, i) => (
           <button
             key={path}
