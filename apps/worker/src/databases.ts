@@ -242,8 +242,10 @@ export async function stopDatabase(id: string) {
   if (current?.State.Running) await docker.getContainer(current.Id).stop({ t: 20 });
 }
 export async function pauseDatabase(id: string) {
+  // Stop first so engines can flush; force-remove would SIGKILL a running database.
+  await stopDatabase(id);
   const current = await inspectDatabase(id);
-  if (current) await docker.getContainer(current.Id).remove({ force: true });
+  if (current) await docker.getContainer(current.Id).remove();
   await removeDatabaseNetwork(id);
 }
 export async function removeDatabase(id: string) {
