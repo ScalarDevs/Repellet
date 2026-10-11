@@ -189,19 +189,6 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
               <EmptyState
                 title="No people yet"
                 description="Add a person to create an account on this server."
-                action={
-                  <Button
-                    variant="primary"
-                    icon={<UserPlus size={15} />}
-                    onClick={() => {
-                      dialogVersion.current++;
-                      setCreateErrors({});
-                      setCreating(true);
-                    }}
-                  >
-                    Add person
-                  </Button>
-                }
               />
             )}
           </Section>
