@@ -153,7 +153,8 @@ export const environmentSchema = z
     z.string().max(32768),
   )
   .refine((v) => Object.keys(v).length <= 100, 'At most 100 variables');
-export type ProjectState = 'stopped' | 'building' | 'starting' | 'running' | 'stopping' | 'failed';
+export type ProjectState =
+  'stopped' | 'building' | 'starting' | 'running' | 'stopping' | 'paused' | 'failed';
 export type ProjectRole = 'owner' | 'editor' | 'viewer';
 export type User = {
   id: string;

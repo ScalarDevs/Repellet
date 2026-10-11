@@ -2,7 +2,7 @@ import { DatabasePanel } from './DatabasePanel';
 import { useState, useEffect, useLayoutEffect, useRef, lazy, Suspense } from 'react';
 import type { User, TerminalInfo, WorkspacePreferences } from '@repellet/shared';
 import { api, post, errorMessage, previewUrl } from './api';
-import { Spinner, useUi, hasOpenDialog } from './ui';
+import { Spinner, useUi, hasOpenDialog, Modal, Button } from './ui';
 import { FileTree, SearchPane } from './Files';
 import { GitPane } from './GitPane';
 import { preferenceKey, readPreferences, savePreferences } from './preferences';
@@ -69,6 +69,8 @@ export function Workspace({
     open,
     openPending,
     openError,
+    capacityError,
+    setCapacityError,
   } = useProjectPolling(id);
   const editable = !!project && project.role !== 'viewer';
   const ready = project?.state === 'running';
@@ -107,6 +109,15 @@ export function Workspace({
         ...previous,
         [editor.active]: (previous[editor.active] || 0) + 1,
       }));
+    }
+  }
+  async function pauseAndRetry(targetId: string) {
+    try {
+      await post(`/projects/${targetId}/pause`);
+      await open(true);
+      await load(true);
+    } catch (e) {
+      ui.notify(errorMessage(e));
     }
   }
   const layout = useWorkspaceLayout(saved, project?.state);
@@ -374,7 +385,7 @@ export function Workspace({
   }
   const openingError =
     loadError ||
-    (!ready && openError) ||
+    (!ready && !capacityError ? openError : '') ||
     (project?.state === 'failed' ? project.error || 'The workspace needs attention.' : '') ||
     (!filesReady && filesError) ||
     (!terminals.initialReady && terminals.error) ||
@@ -386,7 +397,9 @@ export function Workspace({
     : !ready
       ? project.state === 'building'
         ? 'Installing and checking your tools…'
-        : 'Starting workspace…'
+        : project.state === 'paused'
+          ? 'Restoring your paused workspace…'
+          : 'Starting workspace…'
       : !filesReady
         ? 'Loading project files…'
         : !terminals.initialReady
@@ -416,6 +429,27 @@ export function Workspace({
   return (
     <>
       {loadingScreen}
+      {capacityError && !opened && (
+        <Modal title="Active project limit reached" onClose={() => setCapacityError(null)}>
+          <p className="muted">
+            {capacityError.activeProjects?.length
+              ? 'Pause one of your active projects to open this workspace, or exit this project.'
+              : 'No active project you can pause is available for this workspace. Exit this project and try again later.'}
+          </p>
+          <div className="modal-actions modal-actions-stack">
+            {(capacityError.activeProjects || []).map((candidate) => (
+              <Button
+                key={candidate.id}
+                variant="primary"
+                onClick={() => void pauseAndRetry(candidate.id)}
+              >
+                Pause {candidate.name}
+              </Button>
+            ))}
+            <Button onClick={onBack}>Exit this project</Button>
+          </div>
+        </Modal>
+      )}
       <div
         className="workspace"
         inert={!opened}

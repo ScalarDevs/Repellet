@@ -502,6 +502,12 @@
 .status.failed i {
   background: var(--color-danger);
 }
+.status.paused {
+  color: var(--color-text-subtle);
+}
+.status.paused i {
+  background: var(--color-text-subtle);
+}
 .online-dot {
   display: inline-block;
   width: 6px;

@@ -131,7 +131,7 @@ it('reports live running state independently of failed preview readiness and ign
   expect(probePreview).not.toHaveBeenCalled();
 });
 
-it.each(['stopped', 'building', 'starting', 'stopping', 'failed'])(
+it.each(['stopped', 'building', 'starting', 'stopping', 'paused', 'failed'])(
   'does not start or query a %s workspace',
   async (workspaceState) => {
     state.project.state = workspaceState;

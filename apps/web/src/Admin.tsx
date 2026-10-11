@@ -275,7 +275,11 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
                           </small>
                         </span>
                       </button>
-                      <Status state={p.running === true ? 'running' : 'idle'} />
+                      <Status
+                        state={
+                          p.state === 'paused' ? 'paused' : p.running === true ? 'running' : 'idle'
+                        }
+                      />
                       <span className="admin-storage">{formatBytes(p.storageBytes)}</span>
                       <div className="list-row-actions admin-stop">
                         {p.state === 'running' && (

@@ -89,13 +89,15 @@ it('counts live main apps and shows Idle for every other project lifecycle state
   const list = [
     { ...project, id: 'app', name: 'Live app', running: true },
     { ...project, id: 'editor', name: 'Editor only', running: false },
-    ...(['stopped', 'building', 'starting', 'stopping', 'failed'] as const).map((state) => ({
-      ...project,
-      id: state,
-      name: state,
-      state,
-      running: false,
-    })),
+    ...(['stopped', 'building', 'starting', 'stopping', 'paused', 'failed'] as const).map(
+      (state) => ({
+        ...project,
+        id: state,
+        name: state,
+        state,
+        running: false,
+      }),
+    ),
   ];
   vi.mocked(api).mockResolvedValue(list);
   const { container } = render(
@@ -107,7 +109,9 @@ it('counts live main apps and shows Idle for every other project lifecycle state
   expect(screen.getByText('1 running · Projects are private until you share them.')).toBeTruthy();
   expect(container.querySelectorAll('.status.running')).toHaveLength(1);
   expect(container.querySelectorAll('.status.idle')).toHaveLength(6);
+  expect(container.querySelectorAll('.status.paused')).toHaveLength(1);
   expect(screen.getAllByText('Idle')).toHaveLength(6);
+  expect(screen.getByText('Paused')).toBeTruthy();
 });
 it('uses app activity for admin badges while retaining workspace Stop controls', async () => {
   const fallback = vi.mocked(api).getMockImplementation()!;
@@ -117,6 +121,14 @@ it('uses app activity for admin badges while retaining workspace Stop controls',
           { ...project, id: 'app', name: 'Live app', running: true, canOpen: true },
           { ...project, id: 'idle', name: 'Editor only', running: false, canOpen: true },
           { ...project, id: 'failed', name: 'Failed workspace', state: 'failed', canOpen: true },
+          {
+            ...project,
+            id: 'paused',
+            name: 'Paused workspace',
+            state: 'paused',
+            running: false,
+            canOpen: true,
+          },
         ]
       : fallback(path, options),
   );
@@ -130,6 +142,8 @@ it('uses app activity for admin badges while retaining workspace Stop controls',
   await screen.findByText('Live app');
   expect(container.querySelectorAll('.status.running')).toHaveLength(1);
   expect(container.querySelectorAll('.status.idle')).toHaveLength(2);
+  expect(container.querySelectorAll('.status.paused')).toHaveLength(1);
+  expect(screen.getByText('Paused')).toBeTruthy();
   expect(screen.getAllByRole('button', { name: 'Stop workspace' })).toHaveLength(2);
   fireEvent.click(screen.getAllByRole('button', { name: 'Stop workspace' })[0]!);
   const confirm = await screen.findByRole('dialog', { name: 'Stop workspace?' });
