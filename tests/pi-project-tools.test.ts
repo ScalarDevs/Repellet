@@ -26,11 +26,13 @@ function fixture(branch: any[] = []) {
   return { tools, handlers, emit, execute };
 }
 
-it('registers four narrowly scoped tools and gives them readable transcript labels', () => {
+it('registers six narrowly scoped tools and gives them readable transcript labels', () => {
   const { tools } = fixture();
   expect([...tools.keys()]).toEqual([
     'project_status',
     'project_logs',
+    'project_preparation_logs',
+    'project_prepare',
     'project_start',
     'project_stop',
   ]);
@@ -40,6 +42,10 @@ it('registers four narrowly scoped tools and gives them readable transcript labe
     expect(toolLabel(name)).not.toBe(name);
   }
   expect(tools.get('project_logs').parameters.properties.tailLines).toMatchObject({
+    minimum: 1,
+    maximum: 1000,
+  });
+  expect(tools.get('project_preparation_logs').parameters.properties.tailLines).toMatchObject({
     minimum: 1,
     maximum: 1000,
   });
@@ -55,16 +61,27 @@ it('sends operations through the event bus without project identity or credentia
     expect.objectContaining({ operation: 'logs', arguments: { tailLines: 12 } }),
   );
   expect(f.emit.mock.calls[0]![1]).not.toHaveProperty('projectId');
+  await f.execute('project_preparation_logs', { tailLines: 12 });
+  expect(f.emit).toHaveBeenLastCalledWith(
+    'repellet:project-control',
+    expect.objectContaining({ operation: 'preparation_logs', arguments: { tailLines: 12 } }),
+  );
+  await f.execute('project_prepare');
+  expect(f.emit).toHaveBeenLastCalledWith(
+    'repellet:project-control',
+    expect.objectContaining({ operation: 'prepare', arguments: {} }),
+  );
 });
 
 it('blocks mutations when a restored branch is in plan mode while allowing reads', async () => {
   const f = fixture([{ type: 'custom', customType: 'plan-mode-state', data: { enabled: true } }]);
-  for (const name of ['project_start', 'project_stop'])
+  for (const name of ['project_prepare', 'project_start', 'project_stop'])
     expect(await f.execute(name)).toMatchObject({ isError: true });
   expect(f.emit).not.toHaveBeenCalled();
   await f.execute('project_status');
   await f.execute('project_logs');
-  expect(f.emit).toHaveBeenCalledTimes(2);
+  await f.execute('project_preparation_logs');
+  expect(f.emit).toHaveBeenCalledTimes(3);
 });
 
 it('adds status-first guidance without removing existing system instructions', () => {
@@ -115,6 +132,33 @@ it('labels empty and truncated log segments, and bounds model-visible bytes', as
   expect(result.content[0].text).toContain('(no output yet)');
   expect(result.content[0].text).toContain('[truncated]');
   expect(Buffer.byteLength(result.content[0].text)).toBeLessThanOrEqual(65536);
+  expect(result.content[0].text).not.toContain('�');
+});
+
+it('formats bounded preparation output and retains job status', async () => {
+  const f = fixture();
+  f.emit.mockImplementation((_event, request) =>
+    request.resolve({
+      outcome: 'preparation_logs',
+      preparation: {
+        status: 'installing',
+        error: null,
+        job: {
+          id: 'job',
+          state: 'running',
+          step: 'installing',
+          error: null,
+          startedAt: null,
+          finishedAt: null,
+        },
+        text: 'install output',
+        truncated: false,
+      },
+    }),
+  );
+  const result = await f.execute('project_preparation_logs');
+  expect(result.content[0].text).toContain('Preparation output');
+  expect(result.content[0].text).toContain('install output');
   expect(result.content[0].text).not.toContain('�');
 });
 

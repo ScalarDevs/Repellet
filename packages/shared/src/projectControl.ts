@@ -4,9 +4,10 @@ export const projectControlInputSchema = z.discriminatedUnion('operation', [
   z.object({ operation: z.literal('status'), arguments: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal('start'), arguments: z.object({}).strict() }).strict(),
   z.object({ operation: z.literal('stop'), arguments: z.object({}).strict() }).strict(),
+  z.object({ operation: z.literal('prepare'), arguments: z.object({}).strict() }).strict(),
   z
     .object({
-      operation: z.literal('logs'),
+      operation: z.enum(['logs', 'preparation_logs']),
       arguments: z.object({ tailLines: z.number().int().min(1).max(1000).optional() }).strict(),
     })
     .strict(),

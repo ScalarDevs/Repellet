@@ -99,6 +99,7 @@ it.each([
   { ...request(), userId: 'other' },
   { ...request('start'), arguments: { command: 'other' } },
   { ...request('stop'), arguments: { processId: 'other' } },
+  { ...request('prepare'), arguments: { force: true } },
   { ...request('logs'), arguments: { tailLines: 1.1 } },
   { ...request('logs'), arguments: { tailLines: 0 } },
   { ...request('logs'), arguments: { tailLines: 1001 } },
@@ -124,9 +125,20 @@ it.each([null, { threadId: 'other', turnId: 'turn' }, { threadId: 'thread', turn
   },
 );
 
-it('blocks mutations in plan mode without blocking status', async () => {
+it('forwards preparation and preparation-log operations', async () => {
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ outcome: 'preparing' })));
+  await expect(
+    forwardProjectControl(context(), request('prepare'), new AbortController().signal),
+  ).resolves.toMatchObject({ outcome: 'preparing' });
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ outcome: 'preparation_logs' })));
+  await expect(
+    forwardProjectControl(context(), request('preparation_logs'), new AbortController().signal),
+  ).resolves.toMatchObject({ outcome: 'preparation_logs' });
+});
+
+it('blocks mutations in plan mode without blocking reads', async () => {
   const ctx = { ...context(), planMode: () => true };
-  for (const operation of ['start', 'stop'])
+  for (const operation of ['prepare', 'start', 'stop'])
     expect(
       await forwardProjectControl(ctx, request(operation), new AbortController().signal),
     ).toMatchObject({ error: { code: 'plan_mode' } });
@@ -135,6 +147,10 @@ it('blocks mutations in plan mode without blocking status', async () => {
   expect(await forwardProjectControl(ctx, request(), new AbortController().signal)).toMatchObject({
     outcome: 'status',
   });
+  fetchMock.mockResolvedValue(new Response(JSON.stringify({ outcome: 'preparation_logs' })));
+  expect(
+    await forwardProjectControl(ctx, request('preparation_logs'), new AbortController().signal),
+  ).toMatchObject({ outcome: 'preparation_logs' });
 });
 
 it('does not forward already cancelled requests', async () => {
@@ -156,6 +172,18 @@ it('does not replay a lost mutation and never returns raw transport errors', asy
   expect(result).toMatchObject({
     error: { uncertain: true, message: expect.stringContaining('project_status') },
   });
+  expect(JSON.stringify(result)).not.toContain('private');
+  expect(fetchMock).toHaveBeenCalledOnce();
+});
+
+it('reports an uncertain preparation trigger without replaying it', async () => {
+  fetchMock.mockRejectedValue(new Error('private-worker-token private-provider-key'));
+  const result = await forwardProjectControl(
+    context(),
+    request('prepare'),
+    new AbortController().signal,
+  );
+  expect(result).toMatchObject({ error: { uncertain: true } });
   expect(JSON.stringify(result)).not.toContain('private');
   expect(fetchMock).toHaveBeenCalledOnce();
 });

@@ -5,6 +5,7 @@ import type {
   ProjectControlInput,
   ProjectControlResult,
   ProjectControlStatus,
+  ProjectPreparationLog,
 } from '@repellet/agent-protocol';
 import { db } from './db.js';
 import { users, installation, projectRunProfiles, workspaceProcesses } from './schema.js';
@@ -12,7 +13,14 @@ import { config } from './config.js';
 import { projectAgentAccess, tokenMatches } from './security.js';
 import { bridge } from './worker.js';
 import { serialize } from './lifecycle.js';
-import { mainRunProcessIds, assertPrepared, probePreview, cancelReadiness } from './preparation.js';
+import {
+  mainRunProcessIds,
+  assertPrepared,
+  probePreview,
+  cancelReadiness,
+  preparationJobs,
+  prepareProject,
+} from './preparation.js';
 import { startProfile, stopProcess } from './processes.js';
 import { flushProject } from './collaboration.js';
 import { emit } from './live.js';
@@ -163,13 +171,124 @@ async function logs(
   return { outcome: 'logs', status, logs: output, truncated: output.some((o) => o.truncated) };
 }
 
-/** All decisions use fresh state after acquiring the same lock as the Run UI. */
+function preparationOutput(log: string, tailLines: number) {
+  const lines = log.split(/\r?\n/);
+  if (lines.at(-1) === '') lines.pop();
+  const selected = lines.slice(-tailLines).join('\n');
+  const bytes = Buffer.from(selected);
+  let offset = Math.max(0, bytes.length - 64 * 1024);
+  while (offset < bytes.length && (bytes[offset]! & 0xc0) === 0x80) offset++;
+  const text = bytes.subarray(offset).toString('utf8');
+  return {
+    text,
+    truncated: lines.length > tailLines || Buffer.byteLength(selected) > 64 * 1024 || offset > 0,
+  };
+}
+
+async function preparationLogs(
+  project: Awaited<ReturnType<typeof authorizedProject>>,
+  tailLines: number,
+): Promise<ProjectControlResult> {
+  const [job] = await preparationJobs(project.id);
+  const output = preparationOutput(job?.log || '', tailLines);
+  const preparation: ProjectPreparationLog = {
+    status: project.preparation.status,
+    error: project.preparation.error,
+    job: job
+      ? {
+          id: job.id,
+          state: job.state,
+          step: job.step,
+          error: job.error,
+          startedAt: job.startedAt?.toISOString() || null,
+          finishedAt: job.finishedAt?.toISOString() || null,
+        }
+      : null,
+    text: output.text,
+    truncated: output.truncated,
+  };
+  return {
+    outcome: job ? 'preparation_logs' : 'no_preparation',
+    preparation,
+    truncated: preparation.truncated,
+  };
+}
+
+async function preparationLogsControl(
+  projectId: string,
+  userId: string,
+  tailLines: number,
+): Promise<ProjectControlResult> {
+  try {
+    return await preparationLogs(await authorizedProject(projectId, userId), tailLines);
+  } catch (error) {
+    const code = (error as { statusCode?: number }).statusCode;
+    return failure(
+      code === 401 || code === 403 ? 'access_denied' : 'control_unavailable',
+      code === 401 || code === 403
+        ? 'Enabled project owner access is required for these tools.'
+        : 'Could not read preparation logs.',
+    );
+  }
+}
+
+async function prepareControl(
+  projectId: string,
+  userId: string,
+  signal?: AbortSignal,
+): Promise<ProjectControlResult> {
+  let status: ProjectControlStatus | undefined;
+  let mutationStarted = false;
+  try {
+    signal?.throwIfAborted();
+    const project = await authorizedProject(projectId, userId);
+    status = (await snapshot(project)).status;
+    if (project.state !== 'running')
+      return failure('prepare_blocked', 'Start the workspace in Repellet first.', status);
+    if (['pending', 'files', 'installing'].includes(project.preparation.status))
+      return { outcome: 'preparing', status };
+    if (!project.setupCommand.trim() && !project.starterId)
+      return { outcome: 'already_prepared', status };
+    const [settings] = await db.select().from(installation).where(eq(installation.id, 1));
+    if (settings?.maintenance)
+      return failure('maintenance', 'Installation is paused for backup or maintenance.', status);
+    await authorizedProject(projectId, userId);
+    signal?.throwIfAborted();
+    mutationStarted = true;
+    // Queue the durable preparation after this control operation completes.
+    void Promise.resolve()
+      .then(() => prepareProject(projectId))
+      .catch(() => {});
+    return { outcome: 'preparing', status };
+  } catch (error) {
+    const code = (error as { statusCode?: number }).statusCode;
+    return failure(
+      code === 401 || code === 403
+        ? 'access_denied'
+        : signal?.aborted
+          ? 'cancelled'
+          : 'control_unavailable',
+      code === 401 || code === 403
+        ? 'Enabled project owner access is required for these tools.'
+        : mutationStarted
+          ? 'Preparation was admitted but its outcome is uncertain. Call project_status or project_preparation_logs before retrying.'
+          : 'Could not start preparation.',
+      status,
+      mutationStarted,
+    );
+  }
+}
+
+/** App-control decisions use fresh state after acquiring the same lock as the Run UI. */
 export async function projectControl(
   projectId: string,
   userId: string,
   input: ProjectControlInput,
   signal?: AbortSignal,
 ): Promise<ProjectControlResult> {
+  if (input.operation === 'preparation_logs')
+    return preparationLogsControl(projectId, userId, input.arguments.tailLines ?? 200);
+  if (input.operation === 'prepare') return prepareControl(projectId, userId, signal);
   return serialize(projectId, async () => {
     let status: ProjectControlStatus | undefined;
     let mutationStarted = false;

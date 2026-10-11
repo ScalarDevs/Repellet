@@ -4,6 +4,7 @@ import {
   runtimesSchema,
   environmentSchema,
   projectCreateSchema,
+  projectControlInputSchema,
 } from '@repellet/shared';
 describe('workspace input boundaries', () => {
   it('normalizes relative paths and rejects traversal on both host platforms', () => {
@@ -37,6 +38,25 @@ describe('workspace input boundaries', () => {
       }),
     ).toThrow();
   });
+});
+
+it('accepts preparation controls and bounds their log arguments', () => {
+  expect(projectControlInputSchema.parse({ operation: 'prepare', arguments: {} })).toEqual({
+    operation: 'prepare',
+    arguments: {},
+  });
+  expect(
+    projectControlInputSchema.parse({
+      operation: 'preparation_logs',
+      arguments: { tailLines: 12 },
+    }),
+  ).toEqual({ operation: 'preparation_logs', arguments: { tailLines: 12 } });
+  for (const value of [
+    { operation: 'prepare', arguments: { force: true } },
+    { operation: 'preparation_logs', arguments: { tailLines: 0 } },
+    { operation: 'preparation_logs', arguments: { tailLines: 1001 } },
+  ])
+    expect(() => projectControlInputSchema.parse(value)).toThrow();
 });
 
 it('requires revision feedback and rejects undeclared review choices before resolving', async () => {
