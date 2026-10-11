@@ -3,7 +3,7 @@ import { beforeEach, it, expect, vi } from 'vitest';
 import { render, renderHook, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import { useState } from 'react';
 import { randomUUID } from 'node:crypto';
-import { AgentPanel, AgentItem } from '../apps/web/src/AgentPanel';
+import { AgentPanel, AgentItem, AgentTranscriptItems } from '../apps/web/src/AgentPanel';
 import { useAgentAttachments } from '../apps/web/src/AgentAttachments';
 import { agentTranscript } from '../apps/web/src/agentTranscript';
 import { groupAgentTools } from '../apps/web/src/agentTranscript';
@@ -555,6 +555,100 @@ it('collapses only runs of more than three tools while preserving every tool ent
   expect(
     groups.flatMap((group) => (group.type === 'tools' ? group.entries : [group.entry])),
   ).toEqual(entries);
+});
+
+it('keeps a tool-run disclosure choice when later transcript renders change status', async () => {
+  const entries = (status: 'inProgress' | 'completed' | 'failed', marker = '') =>
+    ['one', 'two', 'three', 'four'].map((id) => ({
+      key: id,
+      turnId: 'turn',
+      item: {
+        type: 'dynamicToolCall' as const,
+        id,
+        namespace: null,
+        tool: 'exec',
+        arguments: { marker },
+        status,
+        contentItems: marker ? [{ type: 'inputText' as const, text: marker }] : null,
+        success: status === 'failed' ? false : null,
+        durationMs: null,
+      },
+    }));
+  const settle = () =>
+    act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+  const untouched = render(
+    <AgentTranscriptItems items={entries('completed')} onOpenFile={vi.fn()} />,
+  );
+  const untouchedDetails = () =>
+    untouched.container.querySelector('details.agent-tool-run') as HTMLDetailsElement;
+  expect(untouchedDetails().open).toBe(false);
+  untouched.rerender(<AgentTranscriptItems items={entries('inProgress')} onOpenFile={vi.fn()} />);
+  await settle();
+  expect(untouchedDetails().open).toBe(true);
+  untouched.rerender(
+    <AgentTranscriptItems items={entries('completed', 'settled')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(untouchedDetails().open).toBe(true);
+  untouched.unmount();
+
+  const view = render(<AgentTranscriptItems items={entries('completed')} onOpenFile={vi.fn()} />);
+  const details = () =>
+    view.container.querySelector('details.agent-tool-run') as HTMLDetailsElement;
+  expect(details().open).toBe(false);
+  fireEvent.click(details().querySelector('summary')!);
+  await settle();
+  expect(details().open).toBe(true);
+  view.rerender(
+    <AgentTranscriptItems items={entries('completed', 'still done')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(details().open).toBe(true);
+  view.rerender(<AgentTranscriptItems items={entries('inProgress')} onOpenFile={vi.fn()} />);
+  view.rerender(
+    <AgentTranscriptItems items={entries('completed', 'streamed')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(details().open).toBe(true);
+
+  view.rerender(
+    <AgentTranscriptItems items={entries('inProgress', 'working')} onOpenFile={vi.fn()} />,
+  );
+  expect(details().open).toBe(true);
+  fireEvent.click(details().querySelector('summary')!);
+  await settle();
+  expect(details().open).toBe(false);
+  view.rerender(
+    <AgentTranscriptItems items={entries('inProgress', 'still working')} onOpenFile={vi.fn()} />,
+  );
+  expect(details().open).toBe(false);
+  view.rerender(
+    <AgentTranscriptItems items={entries('failed', 'still working')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(details().open).toBe(false);
+
+  view.unmount();
+  const failed = render(<AgentTranscriptItems items={entries('failed')} onOpenFile={vi.fn()} />);
+  expect(
+    (failed.container.querySelector('details.agent-tool-run') as HTMLDetailsElement).open,
+  ).toBe(true);
+  failed.unmount();
+
+  const running = render(
+    <AgentTranscriptItems items={entries('inProgress')} onOpenFile={vi.fn()} />,
+  );
+  const runningDetails = () =>
+    running.container.querySelector('details.agent-tool-run') as HTMLDetailsElement;
+  expect(runningDetails().open).toBe(true);
+  running.rerender(
+    <AgentTranscriptItems items={entries('completed', 'finished')} onOpenFile={vi.fn()} />,
+  );
+  await settle();
+  expect(runningDetails().open).toBe(true);
+  expect(running.container.querySelector('.agent-tool-run-running')).toBeNull();
 });
 
 it('preserves interleaved transcript order when switching away from a thread and reopening it', async () => {
