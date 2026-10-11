@@ -180,7 +180,7 @@ it('keeps Provider default explicit even when latest Sol is last in the model li
       : original(path),
   );
   await mountPanel();
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   await screen.findByRole('option', { name: 'gpt-6.1-sol' });
   expect((screen.getByLabelText('Agent model') as HTMLSelectElement).value).toBe('');
   fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
@@ -396,7 +396,7 @@ it('keeps attachment drafts associated with their thread through navigation', as
   );
 });
 
-it('toggles plan mode from the composer outside Run settings and restores its state after navigation', async () => {
+it('toggles plan mode from the composer outside Model and restores its state after navigation', async () => {
   await mountPanel();
   const button = screen.getByRole('button', { name: 'Plan mode', exact: true });
   expect(button.getAttribute('aria-pressed')).toBe('false');
@@ -1034,10 +1034,10 @@ it('moves focus between thread rows with arrows and opens a selected row', async
   fireEvent.click(first);
   expect(screen.getByLabelText('Message agent')).not.toBeNull();
 });
-it('keeps model controls in Run settings and submits only with Cmd/Ctrl+Enter', async () => {
+it('keeps model controls in Model and submits only with Cmd/Ctrl+Enter', async () => {
   await mountPanel();
   expect(screen.queryByLabelText('Agent model')).toBeNull();
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   expect(screen.getByLabelText('Agent model')).not.toBeNull();
   fireEvent.keyDown(screen.getByLabelText('Agent model'), { key: 'Escape' });
   expect(screen.queryByLabelText('Agent model')).toBeNull();
@@ -1293,7 +1293,7 @@ it('switches API-specific run models and preserves drafts without modifying acco
   fireEvent.change(screen.getByLabelText('Message agent'), {
     target: { value: 'Keep this draft' },
   });
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   fireEvent.change(screen.getByLabelText('Agent API'), { target: { value: 'cliproxyapi' } });
   await screen.findByRole('option', { name: 'allowed' });
   expect((screen.getByLabelText('Agent model') as HTMLSelectElement).value).toBe('allowed');
@@ -1340,7 +1340,7 @@ it('restores historical API/model/effort and disables API selection during compa
       : originalPost(path, body),
   );
   await mountPanel();
-  fireEvent.click(screen.getByRole('button', { name: 'Run settings' }));
+  fireEvent.click(screen.getByRole('button', { name: 'Model' }));
   await waitFor(() =>
     expect((screen.getByLabelText('Agent API') as HTMLSelectElement).value).toBe('cliproxyapi'),
   );

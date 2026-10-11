@@ -477,10 +477,34 @@
 }
 .agent-plan-toggle[aria-pressed='true'] {
   color: var(--color-accent);
-  background: var(--color-accent-soft, #8cbfc51c);
+  background: var(--color-accent-tint);
 }
 .agent-plan-toggle {
+  flex-shrink: 0;
+}
+.agent-model-chip {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
+}
+.agent-status-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--color-accent-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.agent-status-link:hover {
+  color: var(--color-accent-hover);
+}
+.agent-thread-switcher {
+  flex-shrink: 0;
 }
 .agent-run-settings-popover {
   position: absolute;

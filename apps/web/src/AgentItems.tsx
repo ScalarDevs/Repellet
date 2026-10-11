@@ -186,7 +186,7 @@ export function AgentTranscriptItems({
     );
     const categories = [...new Set(group.entries.map(({ item }) => toolCategory(item)))];
     return (
-      <details className="agent-tool-run" key={group.key}>
+      <details className="agent-tool-run" key={group.key} open={failed > 0 || running}>
         <summary>
           <ChevronRight size={14} className="agent-tool-run-chevron" aria-hidden="true" />
           <span className="agent-tool-run-count">{group.entries.length} tools</span>

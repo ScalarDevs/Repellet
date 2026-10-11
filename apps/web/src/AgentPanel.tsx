@@ -1,5 +1,13 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Plus, Settings2, Square, MoreHorizontal, ListChecks, Paperclip } from 'lucide-react';
+import {
+  Plus,
+  Settings2,
+  Square,
+  MoreHorizontal,
+  ListChecks,
+  Paperclip,
+  ChevronsUpDown,
+} from 'lucide-react';
 import {
   projectAgentEvent,
   type AgentSettings as Settings,
@@ -396,7 +404,7 @@ export function AgentPanel({
               <Plus size={15} /> New thread
             </Button>
             <IconButton
-              label="Agent settings"
+              label="Defaults"
               icon={<Settings2 size={16} />}
               onClick={() => setSettingsOpen(true)}
             />
@@ -520,6 +528,30 @@ export function AgentPanel({
           <Button size="sm" variant="ghost" onClick={() => onSelectThread('')}>
             ← Threads
           </Button>
+          <MenuButton
+            label="Switch thread"
+            icon={<ChevronsUpDown size={14} />}
+            className="agent-thread-switcher"
+          >
+            {filteredThreads.length === 0 ? (
+              <MenuItem disabled onSelect={() => {}}>
+                No threads
+              </MenuItem>
+            ) : (
+              filteredThreads.map((thread) => (
+                <MenuItem
+                  key={thread.id}
+                  disabled={thread.id === selectedThread}
+                  onSelect={() => {
+                    setHistory(null);
+                    onSelectThread(thread.id);
+                  }}
+                >
+                  {thread.name || thread.preview || 'New conversation'}
+                </MenuItem>
+              ))
+            )}
+          </MenuButton>
           <h2 title={history?.name || 'New conversation'}>{history?.name || 'New conversation'}</h2>
           <MenuButton label="Thread actions" icon={<MoreHorizontal size={16} />}>
             <MenuItem disabled={unavailable || activeHere} onSelect={() => renameThread(history)}>
@@ -539,7 +571,7 @@ export function AgentPanel({
             </MenuItem>
           </MenuButton>
           <IconButton
-            label="Agent settings"
+            label="Defaults"
             icon={<Settings2 size={16} />}
             onClick={() => setSettingsOpen(true)}
           />
@@ -594,17 +626,32 @@ export function AgentPanel({
               ))}
           </div>
           <div className="agent-status" role="status">
-            {!connected
-              ? 'Agent disconnected'
-              : active
-                ? activeHere
-                  ? snapshot?.waiting
-                    ? 'Waiting for your response'
-                    : 'Working…'
-                  : snapshot?.waiting
+            {!connected ? (
+              'Agent disconnected'
+            ) : active ? (
+              activeHere ? (
+                snapshot?.waiting ? (
+                  'Waiting for your response'
+                ) : (
+                  'Working…'
+                )
+              ) : (
+                <button
+                  type="button"
+                  className="agent-status-link"
+                  onClick={() => {
+                    setHistory(null);
+                    onSelectThread(active.threadId);
+                  }}
+                >
+                  {snapshot?.waiting
                     ? 'Another conversation is waiting for input'
-                    : 'Another conversation is working'
-                : 'Ready'}
+                    : 'Another conversation is working'}
+                </button>
+              )
+            ) : (
+              'Ready'
+            )}
             {active && (
               <Button
                 size="sm"
@@ -765,11 +812,17 @@ export function AgentPanel({
                 <Button
                   size="sm"
                   variant="ghost"
+                  className="agent-model-chip"
+                  aria-label="Model"
                   aria-expanded={runSettingsOpen}
                   aria-controls="agent-run-settings"
+                  title="Model and API for this turn"
                   onClick={() => setRunSettingsOpen((value) => !value)}
                 >
-                  Run settings
+                  {models.find((item) => item.model === model)?.displayName ||
+                    model ||
+                    (agentApi === 'chatgpt' ? 'ChatGPT' : 'Custom API')}
+                  {effort ? ` · ${effort}` : ''}
                 </Button>
                 {runSettingsOpen && (
                   <div
@@ -877,11 +930,11 @@ export function AgentPanel({
                   </div>
                 )}
               </div>
-              <Button
-                size="sm"
-                variant="ghost"
+              <IconButton
+                label="Plan mode"
+                icon={<ListChecks size={15} />}
                 className="agent-plan-toggle"
-                aria-pressed={history?.planMode === true}
+                pressed={history?.planMode === true}
                 title={
                   history?.planMode ? 'Leave read-only plan mode' : 'Plan before making changes'
                 }
@@ -897,14 +950,30 @@ export function AgentPanel({
                       );
                   })
                 }
-              >
-                <ListChecks size={14} aria-hidden="true" />
-                Plan mode
-              </Button>
+              />
               <span className="agent-keyboard-hint">⌘ / Ctrl + Enter</span>
               <Button
                 type="submit"
                 variant="primary"
+                title={
+                  archived
+                    ? 'Unarchive this thread to send'
+                    : pasteChoice
+                      ? 'Finish or cancel the paste choice first'
+                      : attachments.blocked
+                        ? 'Sending blocked: finish uploading attachments'
+                        : active && !activeHere
+                          ? 'Another conversation is working — open it or stop it first'
+                          : !activeHere && (catalogLoading || !modelReady)
+                            ? catalogLoading
+                              ? 'Loading models…'
+                              : 'Choose a model before sending'
+                            : !text.trim() && !attachments.input.length
+                              ? 'Enter a message or attach a file'
+                              : unavailable
+                                ? 'Agent is unavailable'
+                                : undefined
+                }
                 disabled={
                   unavailable ||
                   (!activeHere && (catalogLoading || !modelReady)) ||

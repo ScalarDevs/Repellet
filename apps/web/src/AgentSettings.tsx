@@ -162,7 +162,7 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
     setCopied(false);
   }, [login?.type === 'chatgptDeviceCode' ? login.loginId : null]);
   return (
-    <Modal title="Agent settings" onClose={onClose}>
+    <Modal title="Defaults" onClose={onClose}>
       <p>Your agent account applies to all projects you own.</p>
       {error && <Banner tone="danger">{error}</Banner>}
       {!settings ? (
