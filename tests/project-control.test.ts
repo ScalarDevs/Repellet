@@ -193,10 +193,43 @@ it('keeps preparation reads and repeated triggers responsive while preparation i
   expect(prepareProject).toHaveBeenCalledTimes(2);
 });
 
+it('queues pending preparation when no prepare job is in flight', async () => {
+  state.project.setupCommand = 'npm ci';
+  state.project.preparation.status = 'pending';
+  state.jobs = [
+    {
+      id: 'old',
+      state: 'failed',
+      step: 'installing',
+      error: 'Install failed',
+      log: '',
+      startedAt: new Date('2026-01-01T00:00:00.000Z'),
+      finishedAt: new Date('2026-01-01T00:01:00.000Z'),
+    },
+  ];
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  await vi.waitFor(() => expect(prepareProject).toHaveBeenCalledOnce());
+
+  vi.mocked(prepareProject).mockClear();
+  state.project.setupCommand = '';
+  state.project.starterId = 'react-vite';
+  state.jobs = [];
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  await vi.waitFor(() => expect(prepareProject).toHaveBeenCalledOnce());
+});
+
 it('does not duplicate an active preparation or prepare projects without setup work', async () => {
   state.project.setupCommand = 'npm ci';
   state.project.preparation.status = 'installing';
   expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  state.project.preparation.status = 'files';
+  expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  state.project.preparation.status = 'pending';
+  for (const jobState of ['pending', 'running']) {
+    state.jobs = [{ id: 'job', state: jobState, step: 'files' }];
+    expect(await control('prepare')).toMatchObject({ outcome: 'preparing' });
+  }
+  await Promise.resolve();
   expect(prepareProject).not.toHaveBeenCalled();
   state.project.setupCommand = '';
   state.project.starterId = null;

@@ -245,7 +245,15 @@ async function prepareControl(
     status = (await snapshot(project)).status;
     if (project.state !== 'running')
       return failure('prepare_blocked', 'Start the workspace in Repellet first.', status);
-    if (['pending', 'files', 'installing'].includes(project.preparation.status))
+    // `files` and `installing` mean a preparation job is running. `pending` means work is
+    // needed or was auto-queued, so only skip queueing when a prepare is actually in flight.
+    if (
+      ['files', 'installing'].includes(project.preparation.status) ||
+      (project.preparation.status === 'pending' &&
+        (await preparationJobs(project.id)).some((job) =>
+          ['pending', 'running'].includes(job.state),
+        ))
+    )
       return { outcome: 'preparing', status };
     if (!project.setupCommand.trim() && !project.starterId)
       return { outcome: 'already_prepared', status };
