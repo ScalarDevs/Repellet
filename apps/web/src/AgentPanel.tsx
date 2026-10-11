@@ -121,10 +121,13 @@ export function AgentPanel({
   }
   async function loadThreads() {
     const revision = ++listRevision.current;
+    // The search field is only on the thread list. A leftover query must not
+    // narrow the header switcher, which has no way to clear it.
+    const listSearch = selected.current ? '' : search.trim();
     const result = await rpc<{ data: Thread[]; nextCursor: string | null }>('thread/list', {
       archived,
       limit: 100,
-      ...(search.trim() ? { search: search.trim() } : {}),
+      ...(listSearch ? { search: listSearch } : {}),
     });
     if (alive.current && revision === listRevision.current)
       setThreads(result.data.filter((thread) => !thread.parentThreadId));
@@ -553,12 +556,12 @@ export function AgentPanel({
             icon={<ChevronsUpDown size={14} />}
             className="agent-thread-switcher"
           >
-            {filteredThreads.length === 0 ? (
+            {threads.length === 0 ? (
               <MenuItem disabled onSelect={() => {}}>
                 No threads
               </MenuItem>
             ) : (
-              filteredThreads.map((thread) => (
+              threads.map((thread) => (
                 <MenuItem
                   key={thread.id}
                   disabled={thread.id === selectedThread}

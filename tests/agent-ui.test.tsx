@@ -998,6 +998,101 @@ it('copies the device code over HTTP and confirms success without an account err
   }
 });
 
+const catalogThreads = [
+  { ...thread, id: 'thread', name: 'Alpha notes', preview: '' },
+  { ...thread, id: 'beta', name: 'Beta plan', preview: '' },
+];
+
+function mockSearchableThreads() {
+  vi.mocked(post).mockImplementation(async (path, body: any) => {
+    if (!path.endsWith('/rpc')) return {};
+    rpcCalls.push(body);
+    if (body.method === 'thread/list') {
+      const query = String(body.params?.search || '')
+        .trim()
+        .toLowerCase();
+      return {
+        data: catalogThreads.filter((item) => {
+          const haystack = `${item.name || ''} ${item.preview || ''}`.toLowerCase();
+          return !query || haystack.includes(query);
+        }),
+      };
+    }
+    if (body.method === 'thread/read') {
+      const match =
+        catalogThreads.find((item) => item.id === body.params.threadId) || catalogThreads[0];
+      return { thread: { ...match, planMode, turns: [] } };
+    }
+    if (body.method === 'thread/start')
+      return { thread: { ...catalogThreads[0], planMode, turns: [] } };
+    return {};
+  });
+}
+
+async function openThreadList() {
+  render(
+    <UiProvider>
+      <Panel />
+    </UiProvider>,
+  );
+  await waitFor(() => expect(FakeSocket.instances).toHaveLength(1));
+  await act(async () => FakeSocket.instances[0]!.message({ type: 'snapshot', snapshot }));
+  await waitFor(() =>
+    expect(
+      (screen.getByRole('button', { name: 'Send', exact: true }) as HTMLButtonElement).disabled,
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
+  await screen.findByRole('heading', { name: 'Threads' });
+}
+
+it('keeps a leftover thread search from hiding threads in the header switcher', async () => {
+  mockSearchableThreads();
+  await openThreadList();
+  fireEvent.change(screen.getByLabelText('Search threads'), { target: { value: 'Alpha' } });
+  const alpha = await screen.findByRole('button', { name: /^Alpha notes/ });
+  expect(screen.queryByRole('button', { name: /^Beta plan/ })).toBeNull();
+  fireEvent.click(alpha);
+  expect(screen.queryByLabelText('Search threads')).toBeNull();
+  await waitFor(() =>
+    expect(
+      rpcCalls.filter((call) => call.method === 'thread/list').at(-1)?.params.search,
+    ).toBeUndefined(),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Switch thread' }));
+  expect(await screen.findByRole('menuitem', { name: 'Beta plan' })).not.toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Alpha notes' })).not.toBeNull();
+  expect(screen.queryByRole('menuitem', { name: 'No threads' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
+  expect((screen.getByLabelText('Search threads') as HTMLInputElement).value).toBe('Alpha');
+  expect(screen.queryByRole('button', { name: /^Beta plan/ })).toBeNull();
+  expect(screen.getByRole('button', { name: /^Alpha notes/ })).not.toBeNull();
+});
+
+it('does not collapse the header switcher to "No threads" after an unmatched search', async () => {
+  mockSearchableThreads();
+  await openThreadList();
+  fireEvent.change(screen.getByLabelText('Search threads'), { target: { value: 'missing' } });
+  expect(await screen.findByText('No threads match your search.')).not.toBeNull();
+  await waitFor(() =>
+    expect(
+      rpcCalls.some((call) => call.method === 'thread/list' && call.params.search === 'missing'),
+    ).toBe(true),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'New thread' }));
+  await screen.findByRole('heading', { name: 'Alpha notes' });
+  expect(screen.queryByLabelText('Search threads')).toBeNull();
+  await waitFor(() =>
+    expect(
+      rpcCalls.filter((call) => call.method === 'thread/list').at(-1)?.params.search,
+    ).toBeUndefined(),
+  );
+  fireEvent.click(screen.getByRole('button', { name: 'Switch thread' }));
+  expect(screen.queryByRole('menuitem', { name: 'No threads' })).toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Alpha notes' })).not.toBeNull();
+  expect(screen.getByRole('menuitem', { name: 'Beta plan' })).not.toBeNull();
+});
+
 it('shows the Threads page with search, archived filtering, row menus and empty states', async () => {
   await mountPanel();
   fireEvent.click(screen.getByRole('button', { name: '← Threads' }));
