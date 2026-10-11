@@ -2,7 +2,20 @@ import type { Nodes, Root, Text } from 'mdast';
 import type { Plugin } from 'unified';
 import { workspaceFilePath } from './toolActivity';
 
-type Candidate = { start: number; end: number; literal: string; path: string | null };
+type Candidate = {
+  start: number;
+  end: number;
+  literal: string;
+  path: string | null;
+  inlineCode?: boolean;
+};
+
+const fileTag = /^<file\s+path\s*=\s*(?:"([^"]*)"|'([^']*)')\s*\/>$/;
+
+function fileTagPath(value: string): string | null {
+  const match = fileTag.exec(value);
+  return match ? workspaceFilePath(match[1] ?? match[2]) : null;
+}
 
 function candidates(source: string, protectedRanges: Array<[number, number]>): Candidate[] {
   const result: Candidate[] = [];
@@ -25,16 +38,57 @@ function candidates(source: string, protectedRanges: Array<[number, number]>): C
       }
     }
     const literal = source.slice(match.index, end);
-    const tag = /^<file\s+path\s*=\s*(?:"([^"]*)"|'([^']*)')\s*\/>$/.exec(literal);
     result.push({
       start: match.index,
       end,
       literal,
-      path: tag ? workspaceFilePath(tag[1] ?? tag[2]) : null,
+      path: fileTagPath(literal),
     });
     starts.lastIndex = end;
   }
   return result;
+}
+
+function inlineCodeCandidates(
+  source: string,
+  root: Root,
+  protectedRanges: Array<[number, number]>,
+): Candidate[] {
+  const result: Candidate[] = [];
+  walk(root, (node) => {
+    if (node.type !== 'inlineCode') return;
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    const path = fileTagPath(node.value);
+    if (start === undefined || end === undefined || !path) return;
+    // An inline-code node nested in an authored link or another protected node
+    // must remain literal with the surrounding Markdown structure.
+    if (
+      protectedRanges.some(
+        ([rangeStart, rangeEnd]) =>
+          rangeStart <= start && rangeEnd >= end && (rangeStart !== start || rangeEnd !== end),
+      )
+    )
+      return;
+    result.push({
+      start,
+      end,
+      literal: source.slice(start, end),
+      path,
+      inlineCode: true,
+    });
+  });
+  return result;
+}
+
+function maskedLiteral(candidate: Candidate): string {
+  if (!candidate.inlineCode) return candidate.literal.replace(/[^\r\n]/g, 'x');
+  const opening = candidate.literal.match(/^`+/)?.[0] ?? '';
+  const closing = candidate.literal.match(/`+$/)?.[0] ?? '';
+  const contentEnd = candidate.literal.length - closing.length;
+  return (
+    opening + candidate.literal.slice(opening.length, contentEnd).replace(/[^\r\n]/g, 'x') + closing
+  );
 }
 
 function walk(node: Nodes, visit: (node: Nodes) => void) {
@@ -76,7 +130,10 @@ export const remarkFileReferences: Plugin<[], Root> = function () {
       }
     };
     walk(original, (node) => protect(node, false));
-    const tags = candidates(source, protectedRanges);
+    const tags = [
+      ...candidates(source, protectedRanges),
+      ...inlineCodeCandidates(source, original, protectedRanges),
+    ].sort((a, b) => a.start - b.start);
     if (!tags.length) return original;
 
     // A standalone custom tag otherwise starts an HTML block and swallows following
@@ -84,7 +141,7 @@ export const remarkFileReferences: Plugin<[], Root> = function () {
     let probe = '';
     let cursor = 0;
     for (const tag of tags) {
-      probe += source.slice(cursor, tag.start) + tag.literal.replace(/[^\r\n]/g, 'x');
+      probe += source.slice(cursor, tag.start) + maskedLiteral(tag);
       cursor = tag.end;
     }
     probe += source.slice(cursor);
@@ -96,7 +153,12 @@ export const remarkFileReferences: Plugin<[], Root> = function () {
     for (const tag of tags) {
       if (
         escaped(source, tag.start) ||
-        protectedRanges.some(([start, end]) => tag.start < end && tag.end > start)
+        protectedRanges.some(
+          ([start, end]) =>
+            tag.start < end &&
+            tag.end > start &&
+            !(tag.inlineCode && start === tag.start && end === tag.end),
+        )
       )
         continue;
       markdown += source.slice(cursor, tag.start);

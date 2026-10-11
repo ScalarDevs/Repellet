@@ -15,7 +15,7 @@
 
 - When referring the user to a project file in assistant messages or plans, use a self-closing file tag: `<file path="src/data/portfolio.ts" />`. Repellet displays the path as a clickable control that opens the file in the editor.
 - Prefer workspace-relative paths, such as `<file path="README.md" />`; `/workspace/` paths are also supported. Reference only project files. Custom labels, paired tags, and line-number attributes are not supported.
-- Keep examples of the tag syntax inside inline code or fenced code so they remain literal.
+- Keep explanatory tag examples in fenced code or wrap them with surrounding text inside inline code; a standalone inline-code tag is treated as a clickable reference.
 
 ## Main Run app controls
 
