@@ -10,6 +10,7 @@ export function Auth({ setup, onAuth }: { setup: boolean; onAuth: (user: User) =
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
+    document.querySelector<HTMLElement>('.auth-form [data-autofocus]')?.focus();
     return () => {
       mounted.current = false;
     };
@@ -88,8 +89,9 @@ export function Auth({ setup, onAuth }: { setup: boolean; onAuth: (user: User) =
               >
                 <input
                   name="token"
-                  autoFocus
+                  data-autofocus
                   required
+                  disabled={busy}
                   autoComplete="off"
                   placeholder="Token from the server logs"
                 />
@@ -98,6 +100,7 @@ export function Auth({ setup, onAuth }: { setup: boolean; onAuth: (user: User) =
                 <input
                   name="displayName"
                   required
+                  disabled={busy}
                   maxLength={80}
                   autoComplete="name"
                   placeholder="Your name"
@@ -108,8 +111,9 @@ export function Auth({ setup, onAuth }: { setup: boolean; onAuth: (user: User) =
           <Field label="Username">
             <input
               name="username"
-              autoFocus={!setup}
+              {...(!setup ? { 'data-autofocus': true } : {})}
               required
+              disabled={busy}
               minLength={3}
               maxLength={40}
               pattern="[a-zA-Z0-9_.\-]+"
@@ -122,6 +126,7 @@ export function Auth({ setup, onAuth }: { setup: boolean; onAuth: (user: User) =
               type="password"
               name="password"
               required
+              disabled={busy}
               minLength={12}
               maxLength={128}
               autoComplete={setup ? 'new-password' : 'current-password'}

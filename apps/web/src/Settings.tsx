@@ -84,50 +84,51 @@ export function ProjectSettings({
           ...(manage ? [{ id: 'environment' as const, label: 'Environment', icon: Layers }] : []),
           { id: 'members', label: 'People', icon: Users },
         ]}
-      />
-      <TabPanel>
-        {tab === 'general' && (
-          <General
-            details={details}
-            project={project}
-            busy={busy}
-            run={run}
-            alive={alive}
-            onChanged={onChanged}
-            onDuplicate={onDuplicate}
-          />
-        )}
-        <div hidden={tab !== 'run'}>
-          <RepositorySetupForm
-            project={project}
-            onChanged={onChanged}
-            settings={runSettings}
-            onViewLogs={
-              onViewPreparationLogs
-                ? () => {
-                    dismiss();
-                    onViewPreparationLogs();
-                  }
-                : undefined
-            }
-          />
-          <RunProfiles project={project} />
-        </div>
-        {manage && tab === 'environment' && (
-          <Environment
-            environment={environment}
-            project={project}
-            busy={busy}
-            run={run}
-            alive={alive}
-            onChanged={onChanged}
-            onSaved={dismiss}
-          />
-        )}
-        {tab === 'members' && (
-          <Members people={people} project={project} busy={busy} run={run} alive={alive} />
-        )}
-      </TabPanel>
+      >
+        <TabPanel>
+          {tab === 'general' && (
+            <General
+              details={details}
+              project={project}
+              busy={busy}
+              run={run}
+              alive={alive}
+              onChanged={onChanged}
+              onDuplicate={onDuplicate}
+            />
+          )}
+          <div hidden={tab !== 'run'}>
+            <RepositorySetupForm
+              project={project}
+              onChanged={onChanged}
+              settings={runSettings}
+              onViewLogs={
+                onViewPreparationLogs
+                  ? () => {
+                      dismiss();
+                      onViewPreparationLogs();
+                    }
+                  : undefined
+              }
+            />
+            <RunProfiles project={project} />
+          </div>
+          {manage && tab === 'environment' && (
+            <Environment
+              environment={environment}
+              project={project}
+              busy={busy}
+              run={run}
+              alive={alive}
+              onChanged={onChanged}
+              onSaved={dismiss}
+            />
+          )}
+          {tab === 'members' && (
+            <Members people={people} project={project} busy={busy} run={run} alive={alive} />
+          )}
+        </TabPanel>
+      </Tabs>
     </Modal>
   );
 }
@@ -206,7 +207,7 @@ function General({
           </Field>
           {manage && (
             <div className="form-actions start">
-              <Button type="submit" busy={busy} icon={<Save size={15} />}>
+              <Button type="submit" variant="primary" busy={busy} icon={<Save size={15} />}>
                 Save changes
               </Button>
             </div>
@@ -274,6 +275,7 @@ function General({
                     title: 'Stop workspace?',
                     description: 'This stops terminals and running apps. Files are kept.',
                     confirm: true,
+                    danger: true,
                   })
                 )
                   void run(async () => {
@@ -479,49 +481,54 @@ function Environment({
           )
         ) : (
           <div className="env-list">
-            {variables.map((v, i) => (
-              <div className="env-row" key={i}>
-                <input
-                  className="mono-input"
-                  disabled={busy}
-                  required
-                  pattern="[A-Za-z_][A-Za-z0-9_]*"
-                  aria-invalid={!!errors[v.key]}
-                  aria-label={`Variable name ${i + 1}`}
-                  value={v.key}
-                  placeholder="VARIABLE_NAME"
-                  onChange={(e) => update(i, { key: e.target.value })}
-                />
-                <input
-                  className="mono-input"
-                  disabled={busy}
-                  maxLength={32768}
-                  aria-invalid={!!errors[v.key]}
-                  aria-label={`Variable value ${i + 1}`}
-                  readOnly={v.original === databaseVariableName}
-                  title={
-                    v.original === databaseVariableName
-                      ? 'Database-managed connection value'
-                      : undefined
-                  }
-                  type={visible ? 'text' : 'password'}
-                  value={v.value}
-                  placeholder="Value"
-                  onChange={(e) => update(i, { value: e.target.value })}
-                />
-                <IconButton
-                  label={`Remove variable ${i + 1}`}
-                  icon={<Trash2 size={14} />}
-                  disabled={busy || v.original === databaseVariableName}
-                  onClick={() => setVariables((v) => v!.filter((_, n) => n !== i))}
-                />
-                {errors[v.key] && (
-                  <p className="field-error" role="alert">
-                    {errors[v.key]}
-                  </p>
-                )}
-              </div>
-            ))}
+            {variables.map((v, i) => {
+              const errorId = errors[v.key] ? `env-error-${i}` : undefined;
+              return (
+                <div className="env-row" key={i}>
+                  <input
+                    className="mono-input"
+                    disabled={busy}
+                    required
+                    pattern="[A-Za-z_][A-Za-z0-9_]*"
+                    aria-invalid={!!errors[v.key]}
+                    aria-describedby={errorId}
+                    aria-label={`Variable name ${i + 1}`}
+                    value={v.key}
+                    placeholder="VARIABLE_NAME"
+                    onChange={(e) => update(i, { key: e.target.value })}
+                  />
+                  <input
+                    className="mono-input"
+                    disabled={busy}
+                    maxLength={32768}
+                    aria-invalid={!!errors[v.key]}
+                    aria-describedby={errorId}
+                    aria-label={`Variable value ${i + 1}`}
+                    readOnly={v.original === databaseVariableName}
+                    title={
+                      v.original === databaseVariableName
+                        ? 'Database-managed connection value'
+                        : undefined
+                    }
+                    type={visible ? 'text' : 'password'}
+                    value={v.value}
+                    placeholder="Value"
+                    onChange={(e) => update(i, { value: e.target.value })}
+                  />
+                  <IconButton
+                    label={`Remove variable ${i + 1}`}
+                    icon={<Trash2 size={14} />}
+                    disabled={busy || v.original === databaseVariableName}
+                    onClick={() => setVariables((v) => v!.filter((_, n) => n !== i))}
+                  />
+                  {errors[v.key] && (
+                    <p className="field-error" role="alert" id={errorId}>
+                      {errors[v.key]}
+                    </p>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
         <Button variant="link" disabled={busy} onClick={() => void load()}>

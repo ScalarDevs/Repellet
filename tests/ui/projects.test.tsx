@@ -275,6 +275,11 @@ it('edits run settings in one place and keeps General saves to project details',
     </UiProvider>,
   );
   expect(screen.queryByRole('textbox', { name: 'Run command' })).toBeNull();
+  const generalTab = screen.getByRole('tab', { name: 'General' });
+  const panel = screen.getByRole('tabpanel');
+  expect(panel.id).toBe(generalTab.getAttribute('aria-controls'));
+  expect(panel.getAttribute('aria-labelledby')).toBe(generalTab.id);
+  expect(screen.getByRole('button', { name: 'Save changes' }).className).toContain('primary');
   fireEvent.click(screen.getByRole('tab', { name: 'Run', exact: true }));
   fireEvent.change(screen.getByLabelText('Run command'), {
     target: { value: 'new command' },

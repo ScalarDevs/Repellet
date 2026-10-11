@@ -108,7 +108,7 @@ it('ignores older diffs and responses after dismissal', async () => {
   await act(async () => second.resolve({ original: '', modified: 'New diff' }));
   await screen.findByText('New diff');
   await act(async () => first.resolve({ original: '', modified: 'Old diff' }));
-  expect(screen.getByRole('dialog').getAttribute('aria-label')).toContain('two');
+  expect(screen.getByRole('dialog', { name: /two/ })).toBeTruthy();
   fireEvent.click(screen.getByText('one'));
   fireEvent.click(screen.getByLabelText('Close dialog'));
   await act(async () => third.resolve({ original: '', modified: 'Late diff' }));

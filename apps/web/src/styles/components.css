@@ -611,7 +611,6 @@ kbd {
 .dropdown button:focus-visible {
   background: var(--color-hover);
   color: var(--color-text);
-  outline: none;
 }
 .dropdown hr {
   margin: var(--space-1) 0;

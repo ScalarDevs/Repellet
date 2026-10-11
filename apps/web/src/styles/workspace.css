@@ -250,7 +250,6 @@
 .resize-handle:hover,
 .resize-handle:focus {
   background: #84b4bf66;
-  outline: none;
 }
 .resize-handle.horizontal {
   width: 100%;

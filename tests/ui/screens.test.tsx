@@ -131,6 +131,12 @@ it('uses app activity for admin badges while retaining workspace Stop controls',
   expect(container.querySelectorAll('.status.running')).toHaveLength(1);
   expect(container.querySelectorAll('.status.idle')).toHaveLength(2);
   expect(screen.getAllByRole('button', { name: 'Stop workspace' })).toHaveLength(2);
+  fireEvent.click(screen.getAllByRole('button', { name: 'Stop workspace' })[0]!);
+  const confirm = await screen.findByRole('dialog', { name: 'Stop workspace?' });
+  expect(within(confirm).getByText('Confirm').className).toContain('danger');
+  expect(post).not.toHaveBeenCalled();
+  fireEvent.click(within(confirm).getByText('Confirm'));
+  await waitFor(() => expect(post).toHaveBeenCalledWith('/admin/projects/app/stop'));
 });
 it('dismisses file context menus with Escape and restores the file row', async () => {
   render(
