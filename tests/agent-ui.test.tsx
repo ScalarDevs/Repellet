@@ -950,6 +950,40 @@ it.each(['', 'Plan:\n', 'Plan: Plan:\n', 'Plan:\nPlan:\n', 'Plan:\n\nPlan:\r\nPl
   },
 );
 
+it('renders plan todos with various markdown bullet styles, indentation, and checked states', () => {
+  const planText = [
+    'Plan:',
+    '1. Setup project',
+    '',
+    'Todos:',
+    '[ ] #1: Initial task',
+    '[x] #2: Completed task',
+    '- [x] #3: Markdown bullet task',
+    '- [ ] #4: Pending markdown task',
+    '  * [x] Indented completed task',
+    '1. [x] #5: Numbered completed task',
+    '✓ #6: Unicode checkmark task',
+    '○ #7: Unicode open circle task',
+  ].join('\n');
+
+  const item = { type: 'plan', id: 'diverse-plan', text: planText } as const;
+  const view = render(<AgentItem item={item} onOpenFile={vi.fn()} />);
+  const content = view.container.querySelector('.agent-plan-content')!;
+  const checkboxes = [...content.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')];
+
+  expect(checkboxes).toHaveLength(8);
+  expect(checkboxes.map((c) => ({ checked: c.checked, disabled: c.disabled }))).toEqual([
+    { checked: false, disabled: true },
+    { checked: true, disabled: true },
+    { checked: true, disabled: true },
+    { checked: false, disabled: true },
+    { checked: true, disabled: true },
+    { checked: true, disabled: true },
+    { checked: true, disabled: true },
+    { checked: false, disabled: true },
+  ]);
+});
+
 it('renders GFM plans and readable structured file tools with safe file actions', () => {
   const openFile = vi.fn();
   const view = render(

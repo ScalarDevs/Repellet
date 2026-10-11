@@ -1,6 +1,6 @@
 import { useState, useEffect, type ReactNode } from 'react';
 import type { User } from '@repellet/shared';
-import { FolderCode, Github, Settings2, LogOut, ChevronsUpDown, KeyRound } from 'lucide-react';
+import { FolderCode, Github, Settings2, LogOut, ChevronsUpDown, KeyRound, SlidersHorizontal } from 'lucide-react';
 import { api, post, errorMessage } from './api';
 import {
   UiProvider,
@@ -23,6 +23,7 @@ import { Projects } from './Projects';
 import { GitHubSettings } from './GitHub';
 import { Admin } from './Admin';
 import { Workspace } from './Workspace';
+import { SettingsView, type SettingsTab } from './SettingsHub';
 export default function App() {
   return (
     <UiProvider>
@@ -40,9 +41,9 @@ function Application() {
   const [workerHealthy, setWorkerHealthy] = useState<boolean | null>(null);
   const [bootError, setBootError] = useState('');
   const ui = useUi();
-  function navigate(page: Page, project = '') {
-    history.pushState(null, '', pathFor(page, project));
-    setCurrent({ page, project });
+  function navigate(page: Page, project = '', tab = '') {
+    history.pushState(null, '', pathFor(page, project, tab));
+    setCurrent({ page, project, tab });
   }
   useEffect(() => {
     Promise.all([
@@ -147,17 +148,23 @@ function Application() {
             onClick={() => navigate('projects')}
           />
           <NavItem
+            label="Settings"
+            icon={<Settings2 size={17} />}
+            active={current.page === 'settings' && current.tab !== 'github' && current.tab !== 'admin'}
+            onClick={() => navigate('settings', '', 'account')}
+          />
+          <NavItem
             label="GitHub"
             icon={<Github size={17} />}
-            active={current.page === 'github'}
-            onClick={() => navigate('github')}
+            active={current.page === 'github' || (current.page === 'settings' && current.tab === 'github')}
+            onClick={() => navigate('settings', '', 'github')}
           />
           {user.isOwner && (
             <NavItem
               label="Administration"
-              icon={<Settings2 size={17} />}
-              active={current.page === 'admin'}
-              onClick={() => navigate('admin')}
+              icon={<SlidersHorizontal size={17} />}
+              active={current.page === 'admin' || (current.page === 'settings' && current.tab === 'admin')}
+              onClick={() => navigate('settings', '', 'admin')}
             />
           )}
         </nav>
@@ -189,6 +196,9 @@ function Application() {
             <MenuItem icon={<KeyRound size={15} />} onSelect={() => setPassword(true)}>
               Change password
             </MenuItem>
+            <MenuItem icon={<SlidersHorizontal size={15} />} onSelect={() => navigate('settings', '', 'account')}>
+              All settings
+            </MenuItem>
             <MenuItem
               icon={<LogOut size={15} />}
               onSelect={async () => {
@@ -206,10 +216,36 @@ function Application() {
         </div>
       </aside>
       <section className="app-content">
-        {current.page === 'github' ? (
-          <GitHubSettings user={user} />
+        {current.page === 'settings' ? (
+          <SettingsView
+            user={user}
+            initialTab={current.tab}
+            onOpenProject={(id) => navigate('workspace', id)}
+            onTabChange={(tab) => {
+              history.replaceState(null, '', pathFor('settings', '', tab));
+              setCurrent((prev) => ({ ...prev, tab }));
+            }}
+          />
+        ) : current.page === 'github' ? (
+          <SettingsView
+            user={user}
+            initialTab="github"
+            onOpenProject={(id) => navigate('workspace', id)}
+            onTabChange={(tab) => {
+              history.replaceState(null, '', pathFor('settings', '', tab));
+              setCurrent((prev) => ({ ...prev, page: 'settings', tab }));
+            }}
+          />
         ) : current.page === 'admin' && user.isOwner ? (
-          <Admin onOpen={(id) => navigate('workspace', id)} />
+          <SettingsView
+            user={user}
+            initialTab="admin"
+            onOpenProject={(id) => navigate('workspace', id)}
+            onTabChange={(tab) => {
+              history.replaceState(null, '', pathFor('settings', '', tab));
+              setCurrent((prev) => ({ ...prev, page: 'settings', tab }));
+            }}
+          />
         ) : (
           <Projects user={user} onOpen={(id) => navigate('workspace', id)} />
         )}

@@ -2,13 +2,23 @@ import { useEffect, useState } from 'react';
 import type { AgentSettings as Settings, AgentModelCatalog } from '@repellet/shared';
 import type { GetAccountResponse, LoginAccountResponse, Model } from '@repellet/agent-protocol';
 import { api, put, post, errorMessage } from './api';
-import { Modal, Field, Button, Banner, Spinner } from './ui';
+import { Modal, Field, Button, Banner, Spinner, useUi } from './ui';
 import { useAsyncAction } from './components/useAsyncAction';
 import { copyText } from './clipboard';
+
 type AccountState = GetAccountResponse & {
   login: { login: LoginAccountResponse | null; state: string; error: string | null } | null;
 };
-export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
+
+export function AgentSettingsContent({
+  isModal = true,
+  onClose,
+  onSaved,
+}: {
+  isModal?: boolean;
+  onClose?: () => void;
+  onSaved?: () => void;
+}) {
   const [settings, setSettings] = useState<Settings | null>(null);
   const [savedBaseUrl, setSavedBaseUrl] = useState('');
   const [account, setAccount] = useState<AccountState | null>(null);
@@ -28,6 +38,8 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
     skippedConversations?: string[];
   } | null>(null);
   const { busy, run, alive } = useAsyncAction();
+  const ui = useUi();
+
   function acceptAccount(value: AccountState) {
     setAccount(value);
     setSettings((current) =>
@@ -45,10 +57,12 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
         : current,
     );
   }
+
   async function loadAccount() {
     const value = await api<AccountState>('/agent/account');
     if (alive.current) acceptAccount(value);
   }
+
   async function load() {
     try {
       const settings = await api<Settings>('/agent/settings');
@@ -62,9 +76,11 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
       if (alive.current) setError(errorMessage(e));
     }
   }
+
   useEffect(() => {
     void load();
   }, []);
+
   useEffect(() => {
     if (account?.login?.state !== 'pending') return;
     const timer = setInterval(() => {
@@ -81,6 +97,7 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
     }, 2000);
     return () => clearInterval(timer);
   }, [account?.login?.state]);
+
   useEffect(() => {
     if (!settings) return;
     if (settings.defaultApi === 'cliproxyapi' && draftCatalog) {
@@ -128,6 +145,7 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
     removeKey,
     draftCatalog,
   ]);
+
   function updatePreference(field: 'model' | 'effort', value: string) {
     if (!settings) return;
     const selected = settings.defaultApi;
@@ -148,6 +166,7 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
       },
     });
   }
+
   const action = (operation: () => Promise<void>) =>
     run(async () => {
       setError('');
@@ -157,19 +176,21 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
         if (alive.current) setError(errorMessage(e));
       }
     });
+
   const login = account?.login?.login;
   useEffect(() => {
     setCopied(false);
   }, [login?.type === 'chatgptDeviceCode' ? login.loginId : null]);
+
   return (
-    <Modal title="Defaults" onClose={onClose}>
+    <div className={`agent-settings-container ${isModal ? 'is-modal' : 'is-tab'}`}>
       <p>Your agent account applies to all projects you own.</p>
       {error && <Banner tone="danger">{error}</Banner>}
       {!settings ? (
-        <>
+        <div className="agent-settings-loading">
           <Spinner />
           <Button onClick={load}>Retry</Button>
-        </>
+        </div>
       ) : (
         <>
           <section className="agent-defaults">
@@ -501,7 +522,7 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
             )}
           </section>
           <div className="modal-actions">
-            <Button onClick={onClose}>Close</Button>
+            {isModal && onClose && <Button onClick={onClose}>Close</Button>}
             <Button
               variant="primary"
               busy={busy}
@@ -530,6 +551,7 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
                     setRemoveKey(false);
                     setDraftCatalog(null);
                     onSaved?.();
+                    ui.notify('Agent settings saved', 'success');
                   }
                 })
               }
@@ -539,6 +561,228 @@ export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSav
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+export function AgentSettings({ onClose, onSaved }: { onClose: () => void; onSaved?: () => void }) {
+  return (
+    <Modal title="Defaults" onClose={onClose}>
+      <AgentSettingsContent isModal onClose={onClose} onSaved={onSaved} />
+    </Modal>
+  );
+}
+
+export function AgentQuickSettings({
+  onClose,
+  onOpenFullSettings,
+  onSaved,
+}: {
+  onClose: () => void;
+  onOpenFullSettings?: () => void;
+  onSaved?: () => void;
+}) {
+  const [settings, setSettings] = useState<Settings | null>(null);
+  const [models, setModels] = useState<Model[]>([]);
+  const [catalogLoading, setCatalogLoading] = useState(false);
+  const [catalogError, setCatalogError] = useState('');
+  const [error, setError] = useState('');
+  const { busy, run, alive } = useAsyncAction();
+  const ui = useUi();
+
+  async function load() {
+    try {
+      const settings = await api<Settings>('/agent/settings');
+      if (alive.current) setSettings(settings);
+    } catch (e) {
+      if (alive.current) setError(errorMessage(e));
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, []);
+
+  useEffect(() => {
+    if (!settings) return;
+    let disposed = false;
+    setModels([]);
+    setCatalogError('');
+    setCatalogLoading(true);
+    void api<AgentModelCatalog>('/agent/models?api=' + settings.defaultApi)
+      .then((value) => {
+        if (!disposed) {
+          setModels(value.data);
+          setCatalogError(value.error || '');
+        }
+      })
+      .catch((e) => {
+        if (!disposed) setCatalogError(errorMessage(e));
+      })
+      .finally(() => {
+        if (!disposed) setCatalogLoading(false);
+      });
+    return () => {
+      disposed = true;
+    };
+  }, [settings?.defaultApi]);
+
+  function updatePreference(field: 'model' | 'effort', value: string) {
+    if (!settings) return;
+    const selected = settings.defaultApi;
+    setSettings({
+      ...settings,
+      defaults: {
+        ...settings.defaults,
+        [selected]: {
+          ...settings.defaults[selected],
+          [field]: field === 'effort' ? value || null : value,
+          ...(field === 'model'
+            ? {
+                effort:
+                  models.find((model) => model.model === value)?.defaultReasoningEffort || null,
+              }
+            : {}),
+        },
+      },
+    });
+  }
+
+  const action = (operation: () => Promise<void>) =>
+    run(async () => {
+      setError('');
+      try {
+        await operation();
+      } catch (e) {
+        if (alive.current) setError(errorMessage(e));
+      }
+    });
+
+  return (
+    <Modal title="Agent defaults" onClose={onClose} small>
+      <div className="agent-quick-settings">
+        <p className="agent-quick-settings-desc">
+          Quickly configure default API, model, and reasoning effort for new threads.
+        </p>
+        {error && <Banner tone="danger">{error}</Banner>}
+        {!settings ? (
+          <div className="agent-quick-loading">
+            <Spinner />
+            <Button onClick={load}>Retry</Button>
+          </div>
+        ) : (
+          <>
+            <Field label="Default API">
+              <select
+                aria-label="Default API"
+                value={settings.defaultApi}
+                disabled={busy}
+                onChange={(e) =>
+                  setSettings({ ...settings, defaultApi: e.target.value as Settings['defaultApi'] })
+                }
+              >
+                <option value="chatgpt">ChatGPT Auth</option>
+                <option value="cliproxyapi">
+                  {settings.proxySource === 'global' ? 'CLIProxyAPI' : 'Custom API'}
+                </option>
+              </select>
+            </Field>
+            {!settings.availability[settings.defaultApi].available && (
+              <p className="agent-quick-availability" role="status">
+                {settings.availability[settings.defaultApi].reason}
+              </p>
+            )}
+            <Field label="Default model">
+              <select
+                aria-label="Default model"
+                value={settings.defaults[settings.defaultApi].model}
+                disabled={busy || catalogLoading}
+                onChange={(e) => updatePreference('model', e.target.value)}
+              >
+                <option value="">Provider default</option>
+                {settings.defaults[settings.defaultApi].model &&
+                  !models.some(
+                    (model) => model.model === settings.defaults[settings.defaultApi].model,
+                  ) && (
+                    <option value={settings.defaults[settings.defaultApi].model} disabled>
+                      {settings.defaults[settings.defaultApi].model} (unavailable)
+                    </option>
+                  )}
+                {models.map((model) => (
+                  <option key={model.id} value={model.model}>
+                    {model.displayName}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Default reasoning effort">
+              <select
+                aria-label="Default reasoning effort"
+                value={settings.defaults[settings.defaultApi].effort || ''}
+                disabled={busy || catalogLoading}
+                onChange={(e) => updatePreference('effort', e.target.value)}
+              >
+                <option value="">Provider default</option>
+                {(
+                  models.find(
+                    (model) =>
+                      model.model ===
+                      (settings.defaults[settings.defaultApi].model ||
+                        models.find((item) => item.isDefault)?.model),
+                  )?.supportedReasoningEfforts || []
+                ).map((option) => (
+                  <option key={option.reasoningEffort} value={option.reasoningEffort}>
+                    {option.reasoningEffort}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            {catalogError && <Banner tone="danger">{catalogError}</Banner>}
+
+            <div className="agent-quick-settings-footer-link">
+              <span>Need custom API keys, ChatGPT sign-in, or import history?</span>
+              {onOpenFullSettings && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  onClick={() => {
+                    onClose();
+                    onOpenFullSettings();
+                  }}
+                >
+                  More agent settings →
+                </Button>
+              )}
+            </div>
+
+            <div className="modal-actions">
+              <Button onClick={onClose}>Close</Button>
+              <Button
+                variant="primary"
+                busy={busy}
+                onClick={() =>
+                  action(async () => {
+                    const fields = {
+                      version: settings.version,
+                      defaultApi: settings.defaultApi,
+                      defaults: settings.defaults,
+                    };
+                    const value = await put<Settings>('/agent/settings', fields);
+                    if (alive.current) {
+                      setSettings(value);
+                      onSaved?.();
+                      ui.notify('Agent defaults saved', 'success');
+                      onClose();
+                    }
+                  })
+                }
+              >
+                Save defaults
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
     </Modal>
   );
 }

@@ -15,7 +15,12 @@
   transition:
     background var(--duration-fast),
     border-color var(--duration-fast),
-    color var(--duration-fast);
+    color var(--duration-fast),
+    box-shadow var(--duration-fast),
+    transform var(--duration-fast);
+}
+.button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 .button.small {
   min-height: var(--control-h-sm);
@@ -27,20 +32,24 @@
   background: var(--color-accent);
   border-color: var(--color-accent);
   color: var(--color-on-accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(255, 255, 255, 0.15);
 }
 .button.primary:hover:not(:disabled) {
   background: var(--color-accent-hover);
   border-color: var(--color-accent-hover);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.2);
 }
 .button.secondary {
   background: var(--color-raised);
   border-color: var(--color-border-strong);
   color: var(--color-text-secondary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.12);
 }
 .button.secondary:hover:not(:disabled) {
   background: var(--color-raised-hover);
   border-color: var(--color-border-hover);
   color: var(--color-text);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.18);
 }
 .button.ghost {
   color: var(--color-text-secondary);
@@ -53,15 +62,21 @@
   background: var(--color-danger-solid);
   border-color: var(--color-danger-solid);
   color: var(--color-on-danger);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
 }
 .button.danger:hover:not(:disabled) {
   background: var(--color-danger-solid-hover);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 .button.link {
   min-height: 0;
   padding: var(--space-1) 0;
   color: var(--color-accent);
   font-weight: var(--weight-medium);
+  box-shadow: none;
+}
+.button.link:active:not(:disabled) {
+  transform: none;
 }
 .button.link:hover:not(:disabled) {
   color: var(--color-accent-hover);
@@ -72,12 +87,13 @@
   justify-content: center;
   width: var(--control-h-sm);
   height: var(--control-h-sm);
-  border-radius: var(--radius-sm);
+  border-radius: var(--radius-md);
   color: var(--color-text-subtle);
   flex-shrink: 0;
   transition:
     background var(--duration-fast),
-    color var(--duration-fast);
+    color var(--duration-fast),
+    transform var(--duration-fast);
 }
 .icon-button.small {
   width: var(--control-h-xs);
@@ -87,6 +103,9 @@
 .icon-button[aria-expanded='true'] {
   color: var(--color-text);
   background: var(--color-hover);
+}
+.icon-button:active:not(:disabled) {
+  transform: scale(0.95);
 }
 .icon-button[aria-pressed='true'] {
   color: var(--color-accent-text);
@@ -270,9 +289,11 @@
 }
 .card {
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border-radius: var(--radius-xl);
   background: var(--color-surface);
   padding: var(--space-5);
+  box-shadow: 0 4px 16px -2px rgba(0, 0, 0, 0.2);
+  transition: border-color var(--duration-fast);
 }
 .list-row {
   display: flex;
@@ -595,11 +616,12 @@ kbd {
   right: 0;
   z-index: var(--z-menu);
   min-width: 180px;
-  padding: var(--space-1);
+  padding: var(--space-1-5);
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-lg);
   background: var(--color-raised);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 12px 36px -4px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  backdrop-filter: blur(12px);
   animation: fade-in 0.12s ease;
 }
 .dropdown button {
@@ -607,11 +629,14 @@ kbd {
   align-items: center;
   gap: var(--space-2);
   width: 100%;
-  padding: var(--space-2) var(--space-2);
-  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-2-5);
+  border-radius: var(--radius-md);
   text-align: left;
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
+  transition:
+    background var(--duration-fast),
+    color var(--duration-fast);
 }
 .dropdown button:hover:not(:disabled),
 .dropdown button:focus-visible {
@@ -638,7 +663,7 @@ kbd {
   justify-content: center;
   padding: var(--space-6);
   background: var(--color-backdrop);
-  backdrop-filter: blur(4px);
+  backdrop-filter: blur(8px);
   animation: fade-in var(--duration-fast) ease;
 }
 .modal {
@@ -650,7 +675,7 @@ kbd {
   border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-xl);
   background: var(--color-surface);
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 20px 50px -10px rgba(0, 0, 0, 0.65), 0 0 0 1px rgba(255, 255, 255, 0.04);
   animation: appear var(--duration-medium) ease;
 }
 .modal.small {

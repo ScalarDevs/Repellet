@@ -21,7 +21,7 @@ import {
 } from '@repellet/shared';
 import type { Thread, Model } from '@repellet/agent-protocol';
 import { api, post, wsUrl, errorMessage } from './api';
-import { AgentSettings } from './AgentSettings';
+import { AgentSettings, AgentQuickSettings } from './AgentSettings';
 import { agentTranscript } from './agentTranscript';
 import { AgentTranscriptItems } from './AgentItems';
 import { useAgentAttachments, AgentDraftAttachments, attachmentAccept } from './AgentAttachments';
@@ -58,6 +58,7 @@ export function AgentPanel({
   const [models, setModels] = useState<Model[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [fullSettingsOpen, setFullSettingsOpen] = useState(false);
   const [runSettingsOpen, setRunSettingsOpen] = useState(false);
   const [archived, setArchived] = useState(false);
   const [search, setSearch] = useState('');
@@ -946,6 +947,18 @@ export function AgentPanel({
                           </option>
                         ))}
                     </select>
+                    <div className="agent-run-settings-footer">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        onClick={() => {
+                          setRunSettingsOpen(false);
+                          setSettingsOpen(true);
+                        }}
+                      >
+                        All agent settings →
+                      </Button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -1010,8 +1023,22 @@ export function AgentPanel({
         </>
       )}
       {settingsOpen && (
-        <AgentSettings
+        <AgentQuickSettings
           onClose={() => setSettingsOpen(false)}
+          onOpenFullSettings={() => setFullSettingsOpen(true)}
+          onSaved={() => {
+            if (!selectedThread) {
+              selectionThread.current = null;
+              runSelections.current.delete('');
+            }
+            void api<Settings>('/agent/settings').then(setSettings);
+            setReconnectRevision((value) => value + 1);
+          }}
+        />
+      )}
+      {fullSettingsOpen && (
+        <AgentSettings
+          onClose={() => setFullSettingsOpen(false)}
           onSaved={() => {
             if (!selectedThread) {
               selectionThread.current = null;

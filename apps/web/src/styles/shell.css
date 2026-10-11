@@ -41,21 +41,29 @@
   font-size: var(--text-sm);
   font-weight: var(--weight-medium);
   color: var(--color-text-muted);
+  border: 1px solid transparent;
   transition:
     background var(--duration-fast),
+    border-color var(--duration-fast),
     color var(--duration-fast);
 }
 .sidebar nav button svg {
   flex-shrink: 0;
   color: var(--color-text-subtle);
+  transition: color var(--duration-fast);
 }
 .sidebar nav button:hover {
   background: var(--color-hover);
   color: var(--color-text);
 }
+.sidebar nav button:hover svg {
+  color: var(--color-text);
+}
 .sidebar nav button.active {
   background: var(--color-accent-tint);
+  border-color: var(--color-accent-border);
   color: var(--color-accent-text);
+  font-weight: var(--weight-semibold);
 }
 .sidebar nav button.active svg {
   color: var(--color-accent);

@@ -33,7 +33,9 @@ function Markdown({
       skipHtml
       components={{
         img: () => null,
-        input: ({ checked, ...props }) => <input {...props} checked={checked} disabled />,
+        input: ({ checked, node: _node, ...props }) => (
+          <input {...props} checked={Boolean(checked)} disabled readOnly />
+        ),
         span: ({ node, children }) => {
           const path = node?.properties['data-file-reference'];
           return typeof path === 'string' && onOpenFile ? (
@@ -111,17 +113,20 @@ function PlanContent({ text, onOpenFile }: { text: string; onOpenFile?: (path: s
     markdown = [];
   };
   for (const line of displayText.split('\n')) {
-    const match = line.match(/^\[([ xX])\]\s*(?:#(\d+)[:.]?\s*)?(.*)$/);
+    const match = line.match(
+      /^\s*(?:[-*+]|\d+[.)])?\s*(?:\[([ xX])\]|([✓✔☑])|([○☐]))\s*(?:#(\d+)[:.]?\s*)?(.*)$/,
+    );
     if (!match) {
       markdown.push(line);
       continue;
     }
     flush();
+    const done = (match[1] && match[1].toLowerCase() === 'x') || Boolean(match[2]);
     blocks.push({
       type: 'todo',
-      done: match[1].toLowerCase() === 'x',
-      id: match[2],
-      text: match[3] || '',
+      done,
+      id: match[4],
+      text: match[5] || '',
     });
   }
   flush();
@@ -135,7 +140,7 @@ function PlanContent({ text, onOpenFile }: { text: string; onOpenFile?: (path: s
             </Markdown>
           );
         return (
-          <label className="agent-todo" key={index}>
+          <label className={`agent-todo ${block.done ? 'is-done' : ''}`} key={index}>
             <input type="checkbox" disabled checked={block.done} />
             <span>{block.id ? `#${block.id}: ` : ''}</span>
             <Markdown onOpenFile={onOpenFile}>{block.text}</Markdown>
