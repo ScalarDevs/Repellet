@@ -154,15 +154,11 @@ export function AdminAgentApi() {
           >
             {settings.fetchedAt ? 'Refresh models' : 'Load models'}
           </Button>
-          {needsModels ? (
+          {needsModels && (
             <Banner tone="warning" compact role="status" className="agent-api-load-status">
               Load models for this connection before saving.
             </Banner>
-          ) : connectionLoaded ? (
-            <p className="agent-api-load-status muted" role="status">
-              Models loaded for the current connection.
-            </p>
-          ) : null}
+          )}
         </div>
       </Section>
       <Section
