@@ -27,6 +27,18 @@ export const databaseUrl = (id: string, spec: DatabaseSpec) =>
     ? `postgresql://workspace:${spec.password}@${databaseContainer(id)}:5432/repellet`
     : `mongodb://workspace:${spec.password}@${databaseContainer(id)}:27017/repellet?authSource=repellet`;
 
+async function removeDatabaseNetwork(id: string) {
+  const network = docker.getNetwork(databaseNetwork(id));
+  try {
+    const state = await network.inspect();
+    for (const container of Object.keys(state.Containers || {}))
+      await network.disconnect({ Container: container, Force: true });
+    await network.remove();
+  } catch (e) {
+    if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+  }
+}
+
 export async function inspectDatabase(id: string) {
   try {
     const state = await docker.getContainer(databaseContainer(id)).inspect();
@@ -79,6 +91,9 @@ export async function ensureDatabase(
   workspaceContainerId: string,
 ) {
   const spec = databaseSpecSchema.parse(input);
+  let createdNetwork = false;
+  let createdVolume = false;
+  let createdContainer = false;
   try {
     try {
       await docker.getNetwork(databaseNetwork(id)).inspect();
@@ -90,6 +105,7 @@ export async function ensureDatabase(
         CheckDuplicate: true,
         Labels: { 'repellet.project': id, 'repellet.kind': 'database' },
       });
+      createdNetwork = true;
     }
     try {
       await docker.getVolume(databaseVolume(id)).inspect();
@@ -103,6 +119,7 @@ export async function ensureDatabase(
         Name: databaseVolume(id),
         Labels: { 'repellet.project': id, 'repellet.kind': 'database' },
       });
+      createdVolume = true;
     }
     let current = await inspectDatabase(id);
     if (current && current.Config.Labels?.['repellet.database.id'] !== spec.id)
@@ -157,6 +174,7 @@ export async function ensureDatabase(
           ...(postgres ? {} : { Tmpfs: { '/data/configdb': 'rw,size=64m' } }),
         },
       });
+      createdContainer = true;
       await created.start();
       current = await created.inspect();
     } else if (!current.State.Running) await docker.getContainer(current.Id).start();
@@ -200,7 +218,20 @@ export async function ensureDatabase(
     }
     if (!ready) throw new Error('Database did not become ready');
     return { status: 'ready' as const, url: databaseUrl(id, spec) };
-  } catch {
+  } catch (error) {
+    // Roll back only resources allocated by this attempt. In particular, keep
+    // an existing database volume so a retry never destroys user data.
+    if (createdContainer)
+      await docker
+        .getContainer(databaseContainer(id))
+        .remove({ force: true })
+        .catch(() => {});
+    if (createdNetwork) await removeDatabaseNetwork(id).catch(() => {});
+    if (createdVolume)
+      await docker
+        .getVolume(databaseVolume(id))
+        .remove()
+        .catch(() => {});
     throw Object.assign(new Error('Database could not start. Retry from the Database tab.'), {
       statusCode: 503,
     });
@@ -210,26 +241,22 @@ export async function stopDatabase(id: string) {
   const current = await inspectDatabase(id);
   if (current?.State.Running) await docker.getContainer(current.Id).stop({ t: 20 });
 }
+export async function pauseDatabase(id: string) {
+  // Stop first so engines can flush; force-remove would SIGKILL a running database.
+  await stopDatabase(id);
+  const current = await inspectDatabase(id);
+  if (current) await docker.getContainer(current.Id).remove();
+  await removeDatabaseNetwork(id);
+}
 export async function removeDatabase(id: string) {
   const current = await inspectDatabase(id);
   if (current) await docker.getContainer(current.Id).remove({ force: true, v: true });
-  for (const [kind, name] of [
-    ['volume', databaseVolume(id)],
-    ['network', databaseNetwork(id)],
-  ] as const) {
-    try {
-      if (kind === 'volume') await docker.getVolume(name).remove();
-      else {
-        const network = docker.getNetwork(name);
-        const state = await network.inspect();
-        for (const container of Object.keys(state.Containers || {}))
-          await network.disconnect({ Container: container, Force: true });
-        await network.remove();
-      }
-    } catch (e) {
-      if ((e as { statusCode?: number }).statusCode !== 404) throw e;
-    }
+  try {
+    await docker.getVolume(databaseVolume(id)).remove();
+  } catch (e) {
+    if ((e as { statusCode?: number }).statusCode !== 404) throw e;
   }
+  await removeDatabaseNetwork(id);
 }
 export async function databaseBytes(id: string) {
   try {

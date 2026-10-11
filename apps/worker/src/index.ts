@@ -19,6 +19,7 @@ import {
   ensureWorkspace,
   prepareWorkspace,
   stopWorkspace,
+  pauseWorkspace,
   removeWorkspace,
   duplicateWorkspace,
   inspect,
@@ -107,6 +108,11 @@ app.post('/projects/:id/stop', async (req) => {
   await stopAgent(idFrom(req));
   await disablePreview(idFrom(req));
   return stopWorkspace(idFrom(req));
+});
+app.post('/projects/:id/pause', async (req) => {
+  await stopAgent(idFrom(req));
+  await disablePreview(idFrom(req));
+  return pauseWorkspace(idFrom(req));
 });
 app.delete('/projects/:id', async (req) => {
   await stopAgent(idFrom(req));

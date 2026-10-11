@@ -271,8 +271,8 @@ it('does not duplicate an active preparation or prepare projects without setup w
   expect(await control('prepare')).toMatchObject({ outcome: 'already_prepared' });
 });
 
-it('blocks preparation until the workspace is running', async () => {
-  state.project.state = 'stopped';
+it.each(['stopped', 'paused'])('blocks preparation for a %s workspace', async (workspaceState) => {
+  state.project.state = workspaceState;
   expect(await control('prepare')).toMatchObject({
     outcome: 'error',
     error: { code: 'prepare_blocked' },
@@ -280,7 +280,7 @@ it('blocks preparation until the workspace is running', async () => {
   expect(prepareProject).not.toHaveBeenCalled();
 });
 
-it.each(['stopped', 'building', 'starting', 'stopping', 'failed'])(
+it.each(['stopped', 'building', 'starting', 'stopping', 'paused', 'failed'])(
   'does not start or query a %s workspace',
   async (workspaceState) => {
     state.project.state = workspaceState;

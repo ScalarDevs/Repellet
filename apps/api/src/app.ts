@@ -48,7 +48,13 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
   idempotencyHooks(app);
   auditHooks(app);
   app.setErrorHandler((error, req, reply) => {
-    const e = error as Error & { statusCode?: number; code?: string; completedFiles?: string[] };
+    const e = error as Error & {
+      statusCode?: number;
+      code?: string;
+      completedFiles?: string[];
+      limit?: number;
+      activeProjects?: unknown;
+    };
     if (e instanceof ZodError)
       return reply
         .code(400)
@@ -59,6 +65,9 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
     if (e.code === 'SESSION_UNAUTHORIZED') reply.header('x-repellet-auth', 'session');
     return reply.code(e.statusCode || 500).send({
       error: e.message || 'Request failed',
+      ...(e.code ? { code: e.code } : {}),
+      ...(e.limit !== undefined ? { limit: e.limit } : {}),
+      ...(e.activeProjects ? { activeProjects: e.activeProjects } : {}),
       ...(e.completedFiles ? { completedFiles: e.completedFiles } : {}),
     });
   });
