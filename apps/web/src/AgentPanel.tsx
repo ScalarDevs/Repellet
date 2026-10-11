@@ -27,7 +27,17 @@ import { AgentTranscriptItems } from './AgentItems';
 import { useAgentAttachments, AgentDraftAttachments, attachmentAccept } from './AgentAttachments';
 export { AgentItem, AgentTranscriptItems } from './AgentItems';
 import { flushOpenDocuments } from './documentSaves';
-import { Button, IconButton, Banner, Spinner, MenuButton, MenuItem, useUi } from './ui';
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  Banner,
+  LoadError,
+  Spinner,
+  MenuButton,
+  MenuItem,
+  useUi,
+} from './ui';
 export function AgentPanel({
   projectId,
   selectedThread,
@@ -451,28 +461,38 @@ export function AgentPanel({
             }}
           >
             {filteredThreads.length === 0 ? (
-              <div className="agent-empty-state">
-                <p>
-                  {search
+              <EmptyState
+                className="pane-empty agent-empty-state"
+                title={
+                  search
+                    ? 'No matching threads'
+                    : archived
+                      ? 'No archived threads'
+                      : 'No threads yet'
+                }
+                description={
+                  search
                     ? 'No threads match your search.'
                     : archived
-                      ? 'No archived threads.'
-                      : 'Start a thread to work on this project.'}
-                </p>
-                {!search && !archived && (
-                  <Button
-                    variant="primary"
-                    disabled={unavailable}
-                    onClick={() =>
-                      mutate(async () => {
-                        await newThread();
-                      })
-                    }
-                  >
-                    Start a thread
-                  </Button>
-                )}
-              </div>
+                      ? 'Archived conversations will appear here.'
+                      : 'Start a thread to work on this project.'
+                }
+                action={
+                  !search && !archived ? (
+                    <Button
+                      variant="primary"
+                      disabled={unavailable}
+                      onClick={() =>
+                        mutate(async () => {
+                          await newThread();
+                        })
+                      }
+                    >
+                      Start a thread
+                    </Button>
+                  ) : undefined
+                }
+              />
             ) : (
               filteredThreads.map((thread) => (
                 <div className="agent-thread-entry" role="listitem" key={thread.id}>
@@ -578,19 +598,15 @@ export function AgentPanel({
         </div>
       )}
       {error && (
-        <Banner tone="danger" compact>
-          {error}
-          <Button
-            size="sm"
-            onClick={() =>
-              mutate(async () => {
-                setReconnectRevision((value) => value + 1);
-              })
-            }
-          >
-            Refresh status
-          </Button>
-        </Banner>
+        <LoadError
+          message={error}
+          retryLabel="Refresh status"
+          onRetry={() =>
+            mutate(async () => {
+              setReconnectRevision((value) => value + 1);
+            })
+          }
+        />
       )}
       {snapshot?.error && (
         <Banner tone="danger" compact>
@@ -605,7 +621,7 @@ export function AgentPanel({
             aria-label="Agent conversation"
             role="log"
           >
-            {!snapshot && !error && <Spinner />}
+            {!snapshot && !error && <Spinner label="Loading conversation…" />}
             <AgentTranscriptItems items={items} onOpenFile={onOpenFile} projectId={projectId} />
             {snapshot?.pending
               .filter(

@@ -1,6 +1,6 @@
 import { RefreshCw, ExternalLink, X } from 'lucide-react';
 import type { Project } from '@repellet/shared';
-import { PaneHeader, IconButton, Banner, Button } from '../ui';
+import { PaneHeader, IconButton, Banner, Button, EmptyState } from '../ui';
 export function PreviewPanel({
   project,
   url,
@@ -39,14 +39,19 @@ export function PreviewPanel({
         onClick={() => window.open(url, '_blank', 'noopener')}
         disabled={!url}
       />
-      <IconButton
-        size="sm"
-        label="Close right panel"
-        icon={<X size={14} />}
-        onClick={onClose}
-      />
+      <IconButton size="sm" label="Close right panel" icon={<X size={14} />} onClick={onClose} />
     </>
   );
+  const emptyTitle =
+    appStatus.status === 'starting'
+      ? 'Starting app'
+      : appStatus.error
+        ? 'Preview unavailable'
+        : 'No preview yet';
+  const emptyDescription =
+    appStatus.status === 'starting'
+      ? 'Waiting for the app to become available…'
+      : appStatus.error || (editable ? 'Click Run to start your app.' : 'The app isn’t running.');
   return (
     <aside className="preview-pane" style={{ width }}>
       {showTitle ? (
@@ -76,19 +81,18 @@ export function PreviewPanel({
           sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-downloads"
         />
       ) : (
-        <div className="pane-empty">
-          <p>
-            {appStatus.status === 'starting'
-              ? 'Starting app…'
-              : appStatus.error ||
-                (editable ? 'Click Run to start your app.' : 'The app isn’t running.')}
-          </p>
-          {editable && appStatus.status === 'timeout' && (
-            <Button size="sm" onClick={onRetryReadiness}>
-              Retry readiness
-            </Button>
-          )}
-        </div>
+        <EmptyState
+          className="pane-empty"
+          title={emptyTitle}
+          description={emptyDescription}
+          action={
+            editable && appStatus.status === 'timeout' ? (
+              <Button size="sm" onClick={onRetryReadiness}>
+                Retry readiness
+              </Button>
+            ) : undefined
+          }
+        />
       )}
     </aside>
   );

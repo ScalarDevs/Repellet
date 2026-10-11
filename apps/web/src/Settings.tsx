@@ -23,6 +23,7 @@ import {
   useUi,
   Spinner,
   Avatar,
+  EmptyState,
   LoadError,
   Button,
   IconButton,
@@ -618,49 +619,57 @@ function Members({
       description="Editors can edit, run code, and use shared terminals. Viewers can read files, observe terminals, and open previews."
     >
       {loadError && <LoadError message={loadError} onRetry={load} />}
-      {!members && !loadError && <Spinner />}
-      <div className="list">
-        {members?.map((m) => (
-          <div className="list-row" key={m.user.id}>
-            <Avatar name={m.user.displayName} />
-            <div className="list-row-main">
-              <strong className="truncate" title={m.user.displayName}>
-                {m.user.displayName}
-              </strong>
-              <small className="truncate" title={m.user.username}>
-                @{m.user.username}
-              </small>
-            </div>
-            {manage && m.role !== 'owner' ? (
-              <div className="list-row-actions">
-                <select
-                  className="role-select"
-                  aria-label={`Role for ${m.user.displayName}`}
-                  value={m.role}
-                  disabled={busy}
-                  onChange={(e) => {
-                    const nextRole = e.target.value;
-                    void change(() =>
-                      put(base + '/members', { userId: m.user.id, role: nextRole }),
-                    );
-                  }}
-                >
-                  <option value="editor">Editor</option>
-                  <option value="viewer">Viewer</option>
-                </select>
-                <IconButton
-                  label={`Remove ${m.user.displayName}`}
-                  icon={<Trash2 size={14} />}
-                  disabled={busy}
-                  onClick={() => change(() => remove(base + '/members/' + m.user.id))}
-                />
+      {!members && !loadError && <Spinner label="Loading people…" />}
+      {members && !members.length && (
+        <EmptyState
+          title="No members yet"
+          description="Invite someone to collaborate on this project."
+        />
+      )}
+      {!!members?.length && (
+        <div className="list">
+          {members.map((m) => (
+            <div className="list-row" key={m.user.id}>
+              <Avatar name={m.user.displayName} />
+              <div className="list-row-main">
+                <strong className="truncate" title={m.user.displayName}>
+                  {m.user.displayName}
+                </strong>
+                <small className="truncate" title={m.user.username}>
+                  @{m.user.username}
+                </small>
               </div>
-            ) : (
-              <span className="role-label">{m.role}</span>
-            )}
-          </div>
-        ))}
-      </div>
+              {manage && m.role !== 'owner' ? (
+                <div className="list-row-actions">
+                  <select
+                    className="role-select"
+                    aria-label={`Role for ${m.user.displayName}`}
+                    value={m.role}
+                    disabled={busy}
+                    onChange={(e) => {
+                      const nextRole = e.target.value;
+                      void change(() =>
+                        put(base + '/members', { userId: m.user.id, role: nextRole }),
+                      );
+                    }}
+                  >
+                    <option value="editor">Editor</option>
+                    <option value="viewer">Viewer</option>
+                  </select>
+                  <IconButton
+                    label={`Remove ${m.user.displayName}`}
+                    icon={<Trash2 size={14} />}
+                    disabled={busy}
+                    onClick={() => change(() => remove(base + '/members/' + m.user.id))}
+                  />
+                </div>
+              ) : (
+                <span className="role-label">{m.role}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
       {manage && (
         <form
           className="invite-form"

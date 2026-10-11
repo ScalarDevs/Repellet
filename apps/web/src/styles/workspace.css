@@ -525,6 +525,12 @@
 }
 .pane-empty h2 {
   font-size: var(--text-md);
+  color: var(--color-text-strong);
+}
+.pane-empty .muted {
+  max-width: 280px;
+  font-size: var(--text-xs);
+  color: var(--color-text-subtle);
 }
 .pane-empty-text {
   padding: var(--space-6) var(--space-3);
@@ -750,12 +756,8 @@
   overflow: hidden;
 }
 .terminal-empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
   flex: 1;
-  font-size: var(--text-xs);
-  color: var(--color-text-subtle);
+  justify-content: center;
 }
 
 /* Status bar */
@@ -878,7 +880,6 @@
 .database-panel > * {
   flex-shrink: 0;
 }
-.database-header,
 .database-connection-summary,
 .database-toolbar,
 .database-footer,
@@ -887,9 +888,6 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--space-2);
-}
-.database-header strong {
-  flex: 1;
 }
 .database-connection {
   padding-bottom: var(--space-2);
@@ -921,17 +919,21 @@
 .database-details p {
   margin: var(--space-2) 0;
 }
-.database-empty,
 .database-console,
 .database-record-fields {
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
 }
-.database-empty {
-  align-items: flex-start;
-  padding: var(--space-6) var(--space-3);
-  font-size: var(--text-sm);
+.database-panel .pane-empty label {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-items: stretch;
+  width: min(100%, 240px);
+  text-align: left;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
 }
 .database-toolbar {
   align-items: flex-end;

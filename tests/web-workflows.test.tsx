@@ -214,10 +214,10 @@ describe('explorer recovery and remapping', () => {
     );
     await flush();
     expect(screen.getByText('Listing failed')).toBeTruthy();
-    expect(screen.queryByText('No files yet.')).toBeNull();
+    expect(screen.queryByText('No files yet')).toBeNull();
     fireEvent.click(screen.getByText('Retry'));
     await flush();
-    expect(screen.getByText('No files yet.')).toBeTruthy();
+    expect(screen.getByText('No files yet')).toBeTruthy();
   });
   it('remaps expanded and selected directories before requesting their new paths', async () => {
     let renamed = false;

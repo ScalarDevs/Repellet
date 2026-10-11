@@ -27,6 +27,7 @@ import {
   Menu,
   MenuButton,
   MenuItem,
+  EmptyState,
   LoadError,
   PaneHeader,
   IconButton,
@@ -663,18 +664,22 @@ export function FileTree({
         {errors[''] ? (
           <LoadError message={errors['']!} onRetry={() => load()} />
         ) : loading ? (
-          <Spinner />
+          <Spinner label="Loading files…" />
         ) : children['']?.length ? (
           rows('')
         ) : (
-          <div className="tree-empty">
-            No files yet.
-            {editable && (
-              <Button disabled={busy} variant="link" size="sm" onClick={() => create('file')}>
-                Create a file
-              </Button>
-            )}
-          </div>
+          <EmptyState
+            className="pane-empty"
+            title="No files yet"
+            description="Create a file to start editing in this workspace."
+            action={
+              editable ? (
+                <Button disabled={busy} variant="primary" size="sm" onClick={() => create('file')}>
+                  Create a file
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       </div>
       <div
@@ -935,7 +940,7 @@ export function SearchPane({
       </form>
       {error && <LoadError message={error} onRetry={() => search()} />}
       {busy ? (
-        <Spinner />
+        <Spinner label="Searching…" />
       ) : (
         submitted === query && (
           <div className="search-results">
@@ -951,6 +956,13 @@ export function SearchPane({
                 <code>{m.text}</code>
               </button>
             ))}
+            {!matches.length && (
+              <EmptyState
+                className="pane-empty"
+                title="No matches"
+                description="Try a different search term."
+              />
+            )}
           </div>
         )
       )}

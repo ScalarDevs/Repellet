@@ -118,7 +118,7 @@ export function GitPane({
       {error && <LoadError message={error} onRetry={load} />}
       {!status ? (
         error ? null : (
-          <Spinner />
+          <Spinner label="Loading source control…" />
         )
       ) : !status.initialized ? (
         <EmptyState

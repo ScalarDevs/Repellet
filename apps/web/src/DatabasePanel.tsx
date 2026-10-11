@@ -9,7 +9,19 @@ import type {
 } from '@repellet/shared';
 import { databaseColumnTypeSchema } from '@repellet/shared';
 import { api, post, remove, errorMessage } from './api';
-import { Button, IconButton, MenuButton, MenuItem, Modal, Spinner, Tabs, useUi } from './ui';
+import {
+  Button,
+  EmptyState,
+  IconButton,
+  LoadError,
+  MenuButton,
+  MenuItem,
+  Modal,
+  PaneHeader,
+  Spinner,
+  Tabs,
+  useUi,
+} from './ui';
 
 type Table = { name: string; schema?: string; columns?: DatabaseColumn[] };
 const tableKey = (table: Table) => JSON.stringify([table.schema || '', table.name]);
@@ -213,59 +225,72 @@ export function DatabasePanel({
   const recordCount = data?.rows?.length || 0;
   return (
     <div className="database-panel">
-      <header className="database-header">
-        <Database size={17} />
-        <strong>Database</strong>
-        <IconButton
-          label="Refresh database"
-          icon={<RefreshCw size={15} />}
-          disabled={busy}
-          onClick={() => void run(async () => {}, true)}
-        />
-        <IconButton label="Close right panel" icon={<X size={16} />} onClick={onClose} />
-      </header>
-      {error && (
+      <PaneHeader
+        title="Database"
+        actions={
+          <>
+            <IconButton
+              size="sm"
+              label="Refresh database"
+              icon={<RefreshCw size={15} />}
+              disabled={busy}
+              onClick={() => void run(async () => {}, true)}
+            />
+            <IconButton
+              size="sm"
+              label="Close right panel"
+              icon={<X size={16} />}
+              onClick={onClose}
+            />
+          </>
+        }
+      />
+      {error && database !== undefined && (
         <p role="alert" className="field-error">
           {error}
         </p>
       )}
       {database === undefined ? (
         error ? (
-          <Button onClick={() => void load()}>Retry database</Button>
+          <LoadError message={error} onRetry={() => void load()} retryLabel="Retry database" />
         ) : (
-          <Spinner />
+          <Spinner label="Loading database…" />
         )
       ) : database === null ? (
-        <div className="database-empty">
-          <h3>Add a development database</h3>
-          <p className="muted">
-            One database per project. Data persists when your workspace stops.
-          </p>
-          {owner ? (
-            <>
-              <label>
-                Database type
-                <select
-                  value={engine}
-                  onChange={(event) => setEngine(event.target.value as DatabaseType)}
-                  disabled={busy}
+        <EmptyState
+          className="pane-empty"
+          icon={<Database size={26} />}
+          title="Add a development database"
+          description={
+            owner
+              ? 'One database per project. Data persists when your workspace stops.'
+              : 'The project owner can create a database here.'
+          }
+          action={
+            owner ? (
+              <>
+                <label>
+                  Database type
+                  <select
+                    value={engine}
+                    onChange={(event) => setEngine(event.target.value as DatabaseType)}
+                    disabled={busy}
+                  >
+                    <option value="postgresql">PostgreSQL 17</option>
+                    <option value="mongodb">MongoDB 8.0</option>
+                  </select>
+                </label>
+                <Button
+                  variant="primary"
+                  busy={busy}
+                  onClick={() => void run(() => post(base, { type: engine }))}
                 >
-                  <option value="postgresql">PostgreSQL 17</option>
-                  <option value="mongodb">MongoDB 8.0</option>
-                </select>
-              </label>
-              <Button
-                variant="primary"
-                busy={busy}
-                onClick={() => void run(() => post(base, { type: engine }))}
-              >
-                Create database
-              </Button>
-            </>
-          ) : (
-            <p>The project owner can create a database here.</p>
-          )}
-        </div>
+                  Create database
+                </Button>
+              </>
+            ) : undefined
+          }
+        />
       ) : (
         <>
           <div className="database-connection">
@@ -404,22 +429,22 @@ export function DatabasePanel({
                       ))}
                   </div>
                   {!objects.length && (
-                    <div className="database-empty database-workspace-state">
-                      <Database size={24} aria-hidden="true" />
-                      <h3>No {database.type === 'postgresql' ? 'tables' : 'collections'} yet</h3>
-                      <p className="muted">
-                        Create a {database.type === 'postgresql' ? 'table' : 'collection'} to start
-                        adding records.
-                      </p>
-                      <Button
-                        size="sm"
-                        variant="primary"
-                        disabled={busy}
-                        onClick={() => void createObject()}
-                      >
-                        Create {database.type === 'postgresql' ? 'table' : 'collection'}
-                      </Button>
-                    </div>
+                    <EmptyState
+                      className="pane-empty"
+                      icon={<Database size={26} />}
+                      title={`No ${database.type === 'postgresql' ? 'tables' : 'collections'} yet`}
+                      description={`Create a ${database.type === 'postgresql' ? 'table' : 'collection'} to start adding records.`}
+                      action={
+                        <Button
+                          size="sm"
+                          variant="primary"
+                          disabled={busy}
+                          onClick={() => void createObject()}
+                        >
+                          Create {database.type === 'postgresql' ? 'table' : 'collection'}
+                        </Button>
+                      }
+                    />
                   )}
                   {table &&
                     (section === 'data' ? (
@@ -431,14 +456,11 @@ export function DatabasePanel({
                           </p>
                         )}
                         {readError ? (
-                          <div className="database-workspace-state">
-                            <p role="alert" className="field-error">
-                              {readError}
-                            </p>
-                            <Button size="sm" onClick={() => void loadData()}>
-                              Retry records
-                            </Button>
-                          </div>
+                          <LoadError
+                            message={readError}
+                            onRetry={() => void loadData()}
+                            retryLabel="Retry records"
+                          />
                         ) : data ? (
                           <div
                             className="database-grid"
@@ -523,22 +545,25 @@ export function DatabasePanel({
                               </tbody>
                             </table>
                             {!recordCount && (
-                              <div className="database-empty">
-                                <h3>No records on this page</h3>
-                                <p className="muted">
-                                  {page === 0
+                              <EmptyState
+                                className="pane-empty"
+                                title="No records on this page"
+                                description={
+                                  page === 0
                                     ? 'Insert the first record to populate this object.'
-                                    : 'Return to the previous page or insert a record.'}
-                                </p>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  disabled={busy}
-                                  onClick={() => setEditing({})}
-                                >
-                                  Insert a record
-                                </Button>
-                              </div>
+                                    : 'Return to the previous page or insert a record.'
+                                }
+                                action={
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    disabled={busy}
+                                    onClick={() => setEditing({})}
+                                  >
+                                    Insert a record
+                                  </Button>
+                                }
+                              />
                             )}
                           </div>
                         ) : (

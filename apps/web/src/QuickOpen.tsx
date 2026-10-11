@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { FileIndex } from '@repellet/shared';
 import { api, errorMessage } from './api';
-import { Modal } from './ui';
+import { EmptyState, LoadError, Modal, Spinner } from './ui';
 export function QuickOpen({
   projectId,
   revision,
@@ -13,27 +13,42 @@ export function QuickOpen({
   onOpen: (path: string) => void;
   onClose: () => void;
 }) {
-  const [paths, setPaths] = useState<string[]>([]),
+  const [paths, setPaths] = useState<string[] | null>(null),
     [query, setQuery] = useState(''),
     [selected, setSelected] = useState(0),
     [error, setError] = useState('');
   useEffect(() => {
     let disposed = false;
-    api<FileIndex>(`/projects/${projectId}/file-index`)
-      .then((v) => {
-        if (!disposed) {
-          setPaths(v.paths);
-          setError('');
-        }
-      })
-      .catch((e) => {
-        if (!disposed) setError(errorMessage(e));
-      });
+    setPaths(null);
+    setError('');
+    const load = () =>
+      api<FileIndex>(`/projects/${projectId}/file-index`)
+        .then((v) => {
+          if (!disposed) {
+            setPaths(v.paths);
+            setError('');
+          }
+        })
+        .catch((e) => {
+          if (!disposed) setError(errorMessage(e));
+        });
+    void load();
     return () => {
       disposed = true;
     };
   }, [projectId, revision]);
-  const results = paths
+  async function retry() {
+    setPaths(null);
+    setError('');
+    try {
+      const value = await api<FileIndex>(`/projects/${projectId}/file-index`);
+      setPaths(value.paths);
+      setError('');
+    } catch (e) {
+      setError(errorMessage(e));
+    }
+  }
+  const results = (paths || [])
     .filter((path) =>
       query
         .toLowerCase()
@@ -74,7 +89,8 @@ export function QuickOpen({
         aria-controls="quick-open-results"
         aria-activedescendant={results[selected] ? `quick-file-${selected}` : undefined}
       />
-      {error && <p role="alert">{error}</p>}
+      {error && <LoadError message={error} onRetry={() => void retry()} />}
+      {paths === null && !error && <Spinner label="Loading file index…" />}
       <div className="quick-open-results" id="quick-open-results" role="listbox">
         {results.map((path, i) => (
           <button
@@ -90,7 +106,15 @@ export function QuickOpen({
             {path}
           </button>
         ))}
-        {!results.length && <p>No matching files.</p>}
+        {paths !== null && !results.length && !error && (
+          <EmptyState
+            className="pane-empty"
+            title="No matching files"
+            description={
+              query ? 'Try a different path fragment.' : 'This project has no indexed files yet.'
+            }
+          />
+        )}
       </div>
     </Modal>
   );

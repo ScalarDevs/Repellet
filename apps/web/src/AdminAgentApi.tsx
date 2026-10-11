@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { GlobalAgentApiSettings } from '@repellet/shared';
 import { api, post, put, errorMessage } from './api';
-import { Banner, Button, Field, Section, Spinner, useUi } from './ui';
+import { Banner, Button, Field, LoadError, Section, Spinner, useUi } from './ui';
 import { useAsyncAction } from './components/useAsyncAction';
 
 export function AdminAgentApi() {
@@ -40,11 +40,10 @@ export function AdminAgentApi() {
       }
     });
   if (!settings)
-    return (
-      <>
-        {error ? <Banner tone="danger">{error}</Banner> : <Spinner />}
-        <Button onClick={load}>Retry</Button>
-      </>
+    return error ? (
+      <LoadError message={error} onRetry={() => void load()} />
+    ) : (
+      <Spinner label="Loading agent API settings…" />
     );
   const ids = [...new Set([...settings.models, ...settings.allowedModels])].sort();
   const connectionLoaded = loadedConnection === signature(settings.baseUrl, key, removeKey);

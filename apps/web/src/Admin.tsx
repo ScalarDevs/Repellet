@@ -20,6 +20,7 @@ import {
   Status,
   Spinner,
   LoadError,
+  EmptyState,
   Button,
   IconButton,
   Field,
@@ -132,7 +133,7 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
       <TabPanel>
         {tab === 'agent-apis' && <AdminAgentApi />}
         {loadError && <LoadError message={loadError} onRetry={load} />}
-        {loading && <Spinner />}
+        {loading && <Spinner label="Loading administration…" />}
         {!loading && tab === 'people' && (
           <Section
             title={`People (${users.length})`}
@@ -151,38 +152,58 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
               </Button>
             }
           >
-            <div className="list">
-              {users.map((user) => (
-                <div className="list-row" key={user.id}>
-                  <Avatar name={user.displayName} size={34} />
-                  <div className="list-row-main">
-                    <strong className="truncate" title={user.displayName}>
-                      {user.displayName}
-                    </strong>
-                    <small className="truncate" title={user.username}>
-                      @{user.username}
-                    </small>
-                  </div>
-                  <span className="role-label">
-                    {user.isOwner ? 'Owner' : user.enabled ? 'Member' : 'Disabled'}
-                  </span>
-                  <div className="list-row-actions">
-                    <IconButton
-                      label={`Reset password for ${user.displayName}`}
-                      icon={<KeyRound size={15} />}
-                      onClick={() => resetPassword(user)}
-                    />
-                    {!user.isOwner && (
+            {users.length ? (
+              <div className="list">
+                {users.map((user) => (
+                  <div className="list-row" key={user.id}>
+                    <Avatar name={user.displayName} size={34} />
+                    <div className="list-row-main">
+                      <strong className="truncate" title={user.displayName}>
+                        {user.displayName}
+                      </strong>
+                      <small className="truncate" title={user.username}>
+                        @{user.username}
+                      </small>
+                    </div>
+                    <span className="role-label">
+                      {user.isOwner ? 'Owner' : user.enabled ? 'Member' : 'Disabled'}
+                    </span>
+                    <div className="list-row-actions">
                       <IconButton
-                        label={`${user.enabled ? 'Disable' : 'Enable'} ${user.displayName}`}
-                        icon={user.enabled ? <UserX size={16} /> : <UserCheck size={16} />}
-                        onClick={() => toggleUser(user)}
+                        label={`Reset password for ${user.displayName}`}
+                        icon={<KeyRound size={15} />}
+                        onClick={() => resetPassword(user)}
                       />
-                    )}
+                      {!user.isOwner && (
+                        <IconButton
+                          label={`${user.enabled ? 'Disable' : 'Enable'} ${user.displayName}`}
+                          icon={user.enabled ? <UserX size={16} /> : <UserCheck size={16} />}
+                          onClick={() => toggleUser(user)}
+                        />
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No people yet"
+                description="Add a person to create an account on this server."
+                action={
+                  <Button
+                    variant="primary"
+                    icon={<UserPlus size={15} />}
+                    onClick={() => {
+                      dialogVersion.current++;
+                      setCreateErrors({});
+                      setCreating(true);
+                    }}
+                  >
+                    Add person
+                  </Button>
+                }
+              />
+            )}
           </Section>
         )}
         {!loading &&
@@ -235,49 +256,56 @@ export function Admin({ onOpen }: { onOpen: (id: string) => void }) {
             title={`All projects (${projects.length})`}
             description="Every project on this server, including ones you aren’t a member of."
           >
-            <div className="list">
-              {projects.map((p) => (
-                <div className="list-row" key={p.id}>
-                  <button
-                    className="project-name list-row-main"
-                    disabled={!p.canOpen}
-                    onClick={() => onOpen(p.id)}
-                  >
-                    <span className="project-icon">
-                      <Box size={17} />
-                    </span>
-                    <span className="project-text">
-                      <strong className="truncate" title={p.name}>
-                        {p.name}
-                      </strong>
-                      <small className="truncate" title={p.ownerName}>
-                        {p.ownerName}
-                      </small>
-                    </span>
-                  </button>
-                  <Status state={p.running === true ? 'running' : 'idle'} />
-                  <span className="admin-storage">{formatBytes(p.storageBytes)}</span>
-                  <div className="list-row-actions admin-stop">
-                    {p.state === 'running' && (
-                      <Button
-                        size="sm"
-                        icon={<Square size={11} />}
-                        onClick={async () => {
-                          try {
-                            await post(`/admin/projects/${p.id}/stop`);
-                            await load();
-                          } catch (e) {
-                            ui.notify(errorMessage(e));
-                          }
-                        }}
-                      >
-                        Stop workspace
-                      </Button>
-                    )}
+            {projects.length ? (
+              <div className="list">
+                {projects.map((p) => (
+                  <div className="list-row" key={p.id}>
+                    <button
+                      className="project-name list-row-main"
+                      disabled={!p.canOpen}
+                      onClick={() => onOpen(p.id)}
+                    >
+                      <span className="project-icon">
+                        <Box size={17} />
+                      </span>
+                      <span className="project-text">
+                        <strong className="truncate" title={p.name}>
+                          {p.name}
+                        </strong>
+                        <small className="truncate" title={p.ownerName}>
+                          {p.ownerName}
+                        </small>
+                      </span>
+                    </button>
+                    <Status state={p.running === true ? 'running' : 'idle'} />
+                    <span className="admin-storage">{formatBytes(p.storageBytes)}</span>
+                    <div className="list-row-actions admin-stop">
+                      {p.state === 'running' && (
+                        <Button
+                          size="sm"
+                          icon={<Square size={11} />}
+                          onClick={async () => {
+                            try {
+                              await post(`/admin/projects/${p.id}/stop`);
+                              await load();
+                            } catch (e) {
+                              ui.notify(errorMessage(e));
+                            }
+                          }}
+                        >
+                          Stop workspace
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No projects yet"
+                description="Projects created on this server will appear here."
+              />
+            )}
           </Section>
         )}
       </TabPanel>

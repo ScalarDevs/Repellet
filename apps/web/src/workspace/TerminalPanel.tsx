@@ -1,6 +1,6 @@
 import { Play, Plus, X } from 'lucide-react';
 import type { TerminalInfo } from '@repellet/shared';
-import { IconButton, LoadError } from '../ui';
+import { Button, EmptyState, IconButton, LoadError } from '../ui';
 import { Terminal } from '../Terminal';
 export function TerminalPanel({
   projectId,
@@ -41,11 +41,22 @@ export function TerminalPanel({
             visible={visible}
           />
         ) : (
-          <div className="terminal-empty">
-            {editable
-              ? 'Create a terminal with + to get started.'
-              : 'No terminal sessions are running.'}
-          </div>
+          <EmptyState
+            className="pane-empty terminal-empty"
+            title="No terminal"
+            description={
+              editable
+                ? 'Create a terminal with + to get started.'
+                : 'No terminal sessions are running.'
+            }
+            action={
+              editable ? (
+                <Button size="sm" variant="primary" onClick={onCreate}>
+                  New terminal
+                </Button>
+              ) : undefined
+            }
+          />
         )}
       </div>
       <aside className="terminal-sidebar" aria-label="Terminal sessions">
