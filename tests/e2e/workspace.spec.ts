@@ -275,15 +275,28 @@ for (const starter of [
     await expect(page.getByRole('button', { name: 'Toggle bottom panel' })).toBeVisible({
       timeout: 300000,
     });
-    if (!(await page.getByRole('tab', { name: 'Preparation Logs' }).isVisible()))
-      await page.getByRole('button', { name: 'Toggle bottom panel' }).click();
-    await page.getByRole('tab', { name: 'Preparation Logs' }).click();
-    await expect(
-      page
-        .getByRole('tabpanel', { name: 'Preparation Logs' })
-        .getByText('Ready to run', { exact: true }),
-    ).toBeVisible({ timeout: 300000 });
     const id = page.url().split('/').pop()!;
+    const logsTab = page.getByRole('tab', { name: 'Preparation Logs' });
+    // The tab stays mounted only while preparation is active or that tab is selected.
+    // A fast starter can already be ready before the tab is shown.
+    await expect
+      .poll(
+        async () => {
+          if (await logsTab.isVisible()) return 'visible';
+          return (await (await page.request.get(`/api/projects/${id}/preparation`)).json())
+            .preparation.status;
+        },
+        { timeout: 300000 },
+      )
+      .toMatch(/^(visible|ready)$/);
+    if (await logsTab.isVisible()) {
+      await logsTab.click();
+      await expect(
+        page
+          .getByRole('tabpanel', { name: 'Preparation Logs' })
+          .getByText('Ready to run', { exact: true }),
+      ).toBeVisible({ timeout: 300000 });
+    }
     const before = await (await page.request.get(`/api/projects/${id}/terminals`)).json();
     expect(before.some((t: any) => t.isRun && t.alive)).toBe(false);
     await expect(page.locator('.editor-tab.active')).toContainText(starter.file.split('/').pop()!);
@@ -864,9 +877,9 @@ test('owner Pi settings, streamed tools, threads, steering, interruption, and re
   await expect(page.getByLabel('Message agent')).toBeVisible();
   const composerBounds = await page.locator('.agent-composer').boundingBox();
   expect(composerBounds!.y + composerBounds!.height).toBeLessThanOrEqual(700);
-  await page.getByRole('button', { name: 'Run settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Model', exact: true }).click();
   await expect(page.getByLabel('Agent model')).toBeVisible();
-  await page.getByRole('button', { name: 'Run settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Model', exact: true }).click();
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.screenshot({ path: '.cache/agent-workspace.png', fullPage: true });
   const editorContext = await browser.newContext(),
