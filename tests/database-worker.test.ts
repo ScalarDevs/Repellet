@@ -62,12 +62,12 @@ vi.mock('../apps/worker/src/images.js', () => ({
         state.calls.push('start');
         state.container.State.Running = true;
       },
-      stop: async () => {
-        state.calls.push('stop');
+      stop: async (options?: { t?: number }) => {
+        state.calls.push(options?.t != null ? `stop:${options.t}` : 'stop');
         state.container.State.Running = false;
       },
-      remove: async () => {
-        state.calls.push('container.remove');
+      remove: async (options?: { force?: boolean; v?: boolean }) => {
+        state.calls.push(options?.force ? 'container.remove:force' : 'container.remove');
         state.container = null;
       },
       exec: async (options: any) => {
@@ -164,9 +164,13 @@ it('keeps the volume across stops/restarts and refuses to silently replace missi
   );
   expect(state.creates).toHaveLength(count);
 });
-it('pauses by removing the database container and network while retaining the volume', async () => {
+it('pauses by stopping then removing the database container and network while retaining the volume', async () => {
   await ensureDatabase(id, spec, 'workspace');
   await pauseDatabase(id);
+  expect(state.calls).toContain('stop:20');
+  expect(state.calls).toContain('container.remove');
+  expect(state.calls).not.toContain('container.remove:force');
+  expect(state.calls.indexOf('stop:20')).toBeLessThan(state.calls.indexOf('container.remove'));
   expect(state.container).toBe(null);
   expect(state.network).toBe(false);
   expect(state.volume).toBe(true);
