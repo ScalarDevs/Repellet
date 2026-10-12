@@ -66,7 +66,11 @@ export async function bridgeRequest(
     signal: AbortSignal.any([
       ...(signal ? [signal] : []),
       AbortSignal.timeout(
-        route === '/database' ? 35000 : method === 'POST' && route === '/git' ? 180000 : 30000,
+        route === '/database'
+          ? 35000
+          : method === 'POST' && ['/git', '/git/export', '/git/import'].includes(route)
+            ? 180000
+            : 30000,
       ),
     ]),
   });

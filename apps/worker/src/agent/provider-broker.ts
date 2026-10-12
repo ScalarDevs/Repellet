@@ -36,6 +36,9 @@ export function providerBroker(settings: AgentPrivateSettings & { allowPrivatePr
         const value = p.headers?.[name];
         if (typeof value === 'string' && value.length <= 512 && !/[\r\n]/.test(value)) headers.set(name, value);
       }
+      // Count this stream before refresh(), which is the first await on the ChatGPT path.
+      controller = new AbortController();
+      running.set(p.streamId, controller);
       if (isCustom) {
         if (!settings.apiKey || !settings.proxyModels?.includes(model)) throw new Error('Proxy model is not allowed');
         headers.set('authorization', `Bearer ${settings.apiKey}`);
@@ -45,8 +48,6 @@ export function providerBroker(settings: AgentPrivateSettings & { allowPrivatePr
         headers.set('authorization', `Bearer ${tokens.accessToken}`);
         headers.set('chatgpt-account-id', tokens.chatgptAccountId);
       }
-      controller = new AbortController();
-      running.set(p.streamId, controller);
       const response = await providerFetch(url.href, { method: 'POST', headers, body: p.body, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(5 * 60000)]) }, isCustom && settings.allowPrivateProvider === true);
       if (!response.ok) {
         await response.body?.cancel();

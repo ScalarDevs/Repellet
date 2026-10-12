@@ -193,8 +193,14 @@ function evictWhenIdle(d: Document) {
     void enqueue(d, async () => {
       if (d.clients.size || d.closing) return;
       if (d.dirty && !d.conflict) await flush(d).catch(() => {});
-      if (!d.dirty && !d.conflict) await db.delete(documents).where(eq(documents.id, d.id));
+      if (d.clients.size || d.closing) return;
       d.closing = true;
+      try {
+        if (!d.dirty && !d.conflict) await db.delete(documents).where(eq(documents.id, d.id));
+      } catch (e) {
+        d.closing = false;
+        throw e;
+      }
       clearTimeout(d.timer);
       d.awareness.destroy(); d.doc.destroy();
       opened.delete(key(d.projectId, d.path));

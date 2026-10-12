@@ -38,7 +38,10 @@ export async function providerFetch(input: string, options: RequestInit = {}, al
     // Pin the connection to the addresses just validated, retaining Host/SNI and certificate checks.
     const request = (url.protocol === 'https:' ? https : http).request(url, {
       method: options.method || 'GET', headers, agent: false,
-      lookup: (_hostname, _options, callback) => callback(null, destination.address, destination.family),
+      lookup: (_hostname, lookupOptions, callback) =>
+        lookupOptions.all
+          ? callback(null, [{ address: destination.address, family: destination.family }])
+          : callback(null, destination.address, destination.family),
       signal: options.signal || undefined,
     }, (response) => {
       const status = response.statusCode || 502;
