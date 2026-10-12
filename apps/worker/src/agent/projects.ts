@@ -163,7 +163,7 @@ async function getSession(projectId: string, userId: string) {
         if (existing?.connection.closed) await existing.connection.close();
         // History remains accessible even when either provider needs reconnection.
         const tokens = await accessTokens(userId).catch(() => null);
-        const connection = await startProjectProcess(projectId, settings, tokens || undefined);
+        const connection = await startProjectProcess(projectId, settings, tokens || undefined, () => accessTokens(userId));
         const session: Session = {
           projectId,
           userId,
@@ -473,6 +473,14 @@ export async function agentUsage(projectId: string) {
     limitBytes?: number;
   };
   if (usage.exceeded && agentActivity(projectId).active) await stopAgent(projectId);
+  if (usage.exceeded) {
+    try {
+      const { stopDatabase: halt } = await import('../databases.js');
+      if (typeof halt === 'function') await halt(projectId);
+    } catch (error) {
+      if (!String((error as Error).message).includes('No "stopDatabase" export')) throw error;
+    }
+  }
   return usage;
 }
 export async function closeAllAgents() {

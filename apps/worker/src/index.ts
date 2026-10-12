@@ -7,7 +7,8 @@ import {
   databaseUrl,
 } from './databases.js';
 import { agentRoutes, terminateStaleAgents } from './agent/routes.js';
-import { stopAgent } from './agent/projects.js';
+import { stopAgent, agentUsage } from './agent/projects.js';
+import { storageGuard } from './storage-guard.js';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import { WebSocket } from 'ws';
@@ -27,6 +28,7 @@ import {
   bridgeRequest,
   containerName,
   locked,
+  reconcileWorkspaceSecurity,
 } from './workspaces.js';
 import {
   enablePreview,
@@ -36,6 +38,12 @@ import {
   probePreview,
 } from './previews.js';
 await terminateStaleAgents();
+await reconcileWorkspaceSecurity();
+const stopStorageGuard = storageGuard(async () =>
+  (await docker.listContainers({ filters: { label: ['repellet.managed=true'] } }))
+    .map((container) => projectId(container.Labels['repellet.project'] || '')),
+  agentUsage,
+);
 const app = Fastify({ logger: true, bodyLimit: 12 * 1024 * 1024 });
 await app.register(websocket, { options: { maxPayload: 4 * 1024 * 1024 } });
 app.addHook('onRequest', async (req, reply) => {
@@ -52,8 +60,9 @@ app.setErrorHandler((error, req, reply) => {
 await agentRoutes(app);
 const idFrom = (req: { params: unknown }) => projectId((req.params as { id: string }).id);
 app.post('/revoke', async (req) => {
-  const b = req.body as { userId: string; projectId?: string };
-  revokePreview(b.userId, b.projectId);
+  const b = req.body as { userId?: string; projectId?: string; sessionId?: string };
+  if (!b.userId && !b.sessionId) throw new Error('A revocation identity is required');
+  revokePreview(b.userId, b.projectId, b.sessionId);
   return { ok: true };
 });
 app.get('/health', async () => {
@@ -235,5 +244,6 @@ await app.listen({ host: config.inDocker ? '0.0.0.0' : '127.0.0.1', port: config
 
 for (const signal of ['SIGTERM', 'SIGINT'] as const)
   process.on(signal, () => {
+    stopStorageGuard();
     void app.close().then(() => process.exit(0));
   });

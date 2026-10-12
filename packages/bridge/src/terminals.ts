@@ -5,6 +5,7 @@ import { EventEmitter } from 'node:events';
 import type { WebSocket } from 'ws';
 import { root, resolvePath } from './files.js';
 import { terminalOutput } from './terminal-output.js';
+import { projectEnvironment as scrubEnvironment, projectIdentity } from './process-security.js';
 export type Session = {
   id: string;
   name: string;
@@ -29,7 +30,7 @@ export function setEnvironment(value: Record<string, string>) {
   environment = { ...value };
 }
 export const projectEnvironment = () => ({ ...environment });
-export const getEnvironment = () => ({ ...process.env, ...environment }) as Record<string, string>;
+export const getEnvironment = () => scrubEnvironment({ ...process.env, ...environment }) as Record<string, string>;
 export function info() {
   return [...terminals.values()].map(
     ({
@@ -97,11 +98,12 @@ async function spawnTerminal(
   if (command && !options.id) await stopTerminal('run');
   const directory = await resolvePath(cwd || '');
   const child = pty.spawn('/bin/bash', command ? ['-c', command] : ['--noprofile'], {
+    ...projectIdentity(),
     name: 'xterm-256color',
     cols: 100,
     rows: 28,
     cwd: directory,
-    env: {
+    env: scrubEnvironment({
       ...process.env,
       ...(options.environmentKeys
         ? Object.fromEntries(
@@ -111,7 +113,7 @@ async function spawnTerminal(
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
       PS1: '\\[\\e[38;5;110m\\]workspace\\[\\e[0m\\]:\\w \\$ ',
-    },
+    }),
   });
   const session: Session = {
     id: options.id || (command ? 'run' : randomUUID()),

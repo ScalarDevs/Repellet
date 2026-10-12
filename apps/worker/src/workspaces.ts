@@ -12,6 +12,8 @@ import { config, bridgeToken, projectId } from './config.js';
 import { installManagedAgentContext } from './agent-context.js';
 import { prepareWorkspacePermissions, workspaceVolumeOptions } from './workspace-permissions.js';
 import type { Limits, Runtime } from '@repellet/shared';
+import { hostname } from 'node:os';
+export const workspaceNetwork = (id: string) => `${config.network}-${projectId(id)}`;
 export const containerName = (id: string) => `repellet-project-${projectId(id)}`;
 export const volumeName = (id: string, kind = 'files') => `repellet-${projectId(id)}-${kind}`;
 export const locks = new Map<string, Promise<unknown>>();
@@ -48,7 +50,11 @@ export async function bridgeRequest(
   method = 'GET',
   body?: unknown,
   signal?: AbortSignal,
-) {
+): Promise<Response> {
+  if (route === '/git' && method === 'POST' && (body as { credential?: unknown })?.credential) {
+    const { authenticatedGit } = await import('./git-transport.js');
+    return new Response(JSON.stringify(await authenticatedGit(id, body)), { headers: { 'content-type': 'application/json' } });
+  }
   const url = (await bridgeAddress(id)) + route;
   const response = await fetch(url, {
     method,
@@ -76,11 +82,32 @@ export async function bridgeRequest(
   }
   return response;
 }
-async function ensureNetwork() {
+async function ensureNetwork(id: string) {
+  const name = workspaceNetwork(id);
   try {
-    await docker.getNetwork(config.network).inspect();
-  } catch {
-    await docker.createNetwork({ Name: config.network, CheckDuplicate: true });
+    await docker.getNetwork(name).inspect();
+  } catch (e) {
+    if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+    await docker.createNetwork({ Name: name, CheckDuplicate: true, Labels: { 'repellet.project': id } });
+  }
+  if (config.inDocker) {
+    const worker = process.env.WORKER_CONTAINER_ID || hostname();
+    const state = await docker.getContainer(worker).inspect();
+    if (!state.NetworkSettings.Networks[name])
+      await docker.getNetwork(name).connect({ Container: worker });
+  }
+}
+/** Upgrade without changing volumes: legacy flat-network workspaces must be stopped. */
+export async function reconcileWorkspaceSecurity() {
+  const containers = await docker.listContainers({ all: true, filters: { label: ['repellet.managed=true'] } });
+  for (const container of containers) {
+    const id = projectId(container.Labels['repellet.project'] || '');
+    const state = await inspect(id);
+    if (!state) continue;
+    if (state.HostConfig.NetworkMode !== workspaceNetwork(id) || state.Config.User !== '0:0') {
+      if (state.State.Running) await docker.getContainer(state.Id).stop({ t: 10 });
+      await stopDatabase(id);
+    } else await ensureNetwork(id);
   }
 }
 async function initVolumes(id: string) {
@@ -153,7 +180,7 @@ export type EnsureOptions = {
 };
 export async function ensureWorkspace(id: string, options: EnsureOptions) {
   return locked(id, async () => {
-    await ensureNetwork();
+    await ensureNetwork(id);
     if (options.rebuild) {
       const old = await inspect(id);
       if (old?.State.Running) await docker.getContainer(old.Id).stop({ t: 10 });
@@ -165,6 +192,8 @@ export async function ensureWorkspace(id: string, options: EnsureOptions) {
     if (
       current &&
       (current.Image !== desiredImage.Id ||
+        current.HostConfig?.NetworkMode !== workspaceNetwork(id) ||
+        current.Config?.User !== '0:0' ||
         !current.Mounts.some((mount) => mount.Destination === '/home/agent') ||
         !current.Mounts.some((mount) => mount.Destination === '/home/agent/attachments') ||
         (!config.inDocker &&
@@ -179,18 +208,19 @@ export async function ensureWorkspace(id: string, options: EnsureOptions) {
       const created = await docker.createContainer({
         name: containerName(id),
         Image: image,
-        User: '1000:1000',
+        User: '0:0',
         Env: [`BRIDGE_TOKEN=${bridgeToken(id)}`, `STORAGE_LIMIT_MB=${options.limits.storageMb}`],
         ExposedPorts: { '8787/tcp': {}, [`${options.previewTargetPort || 3000}/tcp`]: {} },
         Labels: { 'repellet.project': id, 'repellet.managed': 'true' },
         WorkingDir: '/workspace',
         HostConfig: {
-          NetworkMode: config.network,
+          NetworkMode: workspaceNetwork(id),
           Memory: options.limits.memoryMb * 1024 * 1024,
           MemorySwap: options.limits.memoryMb * 1024 * 1024,
           NanoCpus: Math.floor(options.limits.cpu * 1e9),
           PidsLimit: 512,
           CapDrop: ['ALL'],
+          CapAdd: ['SETUID', 'SETGID', 'KILL'],
           SecurityOpt: ['no-new-privileges:true'],
           Init: true,
           ExtraHosts: ['host.docker.internal:host-gateway'],
@@ -288,6 +318,7 @@ export async function ensureWorkspace(id: string, options: EnsureOptions) {
       bytes: number;
       exceeded: boolean;
     };
+    if (usage.exceeded) await stopDatabase(id);
     return {
       state: 'running',
       storageBytes: usage.bytes,
@@ -323,6 +354,17 @@ export async function removeWorkspace(id: string) {
     const current = await inspect(id);
     if (current) await docker.getContainer(current.Id).remove({ force: true });
     await removeDatabase(id);
+    const network = typeof (docker as any).getNetwork === 'function' ? docker.getNetwork(workspaceNetwork(id)) : null;
+    try {
+      if (network) {
+      const state = await network.inspect();
+      for (const container of Object.keys(state.Containers || {}))
+        await network.disconnect({ Container: container, Force: true });
+      await network.remove();
+      }
+    } catch (e) {
+      if ((e as { statusCode?: number }).statusCode !== 404) throw e;
+    }
     for (const kind of ['files', 'home', 'agent', 'attachments'])
       try {
         await docker.getVolume(volumeName(id, kind)).remove();

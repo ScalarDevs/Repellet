@@ -66,7 +66,7 @@ services:
       - ${DOCKER_SOCKET_PATH:-/var/run/docker.sock}:/var/run/docker.sock
     ports:
       - '${BIND_ADDRESS:-127.0.0.1}:${PREVIEW_PORT_RANGE:-41000-41031}:${PREVIEW_PORT_RANGE:-41000-41031}'
-    networks: [control, workspaces]
+    networks: [control]
     healthcheck:
       test:
         [
@@ -85,5 +85,3 @@ volumes:
     name: repellet-agent-accounts
 networks:
   control:
-  workspaces:
-    name: ${COMPOSE_PROJECT_NAME:-repellet}-workspaces

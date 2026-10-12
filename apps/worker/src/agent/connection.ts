@@ -1,4 +1,4 @@
-import { EventEmitter } from 'node:events';
+import { EventEmitter, once } from 'node:events';
 import { createInterface } from 'node:readline';
 import type { Readable, Writable } from 'node:stream';
 import type { ClientRequest, ServerNotification, ServerRequest } from '@repellet/agent-protocol';
@@ -20,6 +20,8 @@ export class AgentConnection extends EventEmitter {
   constructor(
     private transport: Transport,
     private secrets: string[] = [],
+    private internalRequest?: (message: any) => boolean,
+    private transformOutgoing?: (message: any) => any,
   ) {
     super();
     const lines = createInterface({ input: transport.output });
@@ -30,6 +32,7 @@ export class AgentConnection extends EventEmitter {
       try {
         const message = JSON.parse(line);
         if (message.method) {
+          if (this.internalRequest?.(message)) return;
           this.emit(message.id === undefined ? 'notification' : 'request', message);
         } else {
           const pending = this.inflight.get(message.id);
@@ -96,6 +99,12 @@ export class AgentConnection extends EventEmitter {
   respond(id: ServerRequest['id'], result: unknown) {
     this.send({ id, result });
   }
+  notifyInternal(method: string, params: unknown) { this.send({ method, params }); }
+  async notifyInternalAsync(method: string, params: unknown, signal: AbortSignal) {
+    if (this.closed) throw new Error('Agent stopped');
+    if (!this.transport.input.write(JSON.stringify({ method, params }) + '\n'))
+      await once(this.transport.input, 'drain', { signal });
+  }
   reject(id: ServerRequest['id'], message: string) {
     this.send({ id, error: { code: -32601, message } });
   }
@@ -106,7 +115,7 @@ export class AgentConnection extends EventEmitter {
   }
   private send(message: unknown) {
     if (this.closed) throw new Error('Agent host process is unavailable');
-    this.transport.input.write(JSON.stringify(message) + '\n');
+    this.transport.input.write(JSON.stringify(this.transformOutgoing ? this.transformOutgoing(message) : message) + '\n');
   }
   private fail(message: string) {
     if (this.closed) return;

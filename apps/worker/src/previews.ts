@@ -3,20 +3,49 @@ import httpProxy from 'http-proxy';
 import type { Socket } from 'node:net';
 import { config } from './config.js';
 import { inspect, containerName } from './workspaces.js';
+import { encodePreviewCookie, decodePreviewCookies } from './preview-cookies.js';
 
 type Preview = { server: http.Server; project: string; targetPort: number };
 const previews = new Map<number, Preview>();
-const activeSockets = new Map<Socket, { userId: string; projectId: string }>();
-export function revokePreview(userId: string, projectId?: string) {
+type Identity = { userId: string; sessionId: string; expiresAt: string };
+const activeSockets = new Map<Socket, Identity & { projectId: string; timer: NodeJS.Timeout }>();
+let authorizationGeneration = 0;
+export function revokePreview(userId?: string, projectId?: string, sessionId?: string) {
+  authorizationGeneration++;
   for (const [socket, identity] of activeSockets)
-    if (identity.userId === userId && (!projectId || identity.projectId === projectId))
-      socket.destroy();
+    if ((!userId || identity.userId === userId) && (!projectId || identity.projectId === projectId) && (!sessionId || identity.sessionId === sessionId)) socket.destroy();
 }
-function remember(socket: Socket, identity: { userId: string }, projectId: string) {
-  activeSockets.set(socket, { userId: identity.userId, projectId });
-  socket.once('close', () => activeSockets.delete(socket));
+function remember(req: http.IncomingMessage, identity: Identity, projectId: string) {
+  const socket = req.socket;
+  const remaining = Date.parse(identity.expiresAt) - Date.now();
+  if (!identity.sessionId || !Number.isFinite(remaining) || remaining <= 0 || socket.destroyed) {
+    socket.destroy(); return false;
+  }
+  const old = activeSockets.get(socket);
+  clearTimeout(old?.timer);
+  const cookie = req.headers.cookie || '';
+  const timer = setTimeout(async () => {
+    if (remaining <= 60000) { socket.destroy(); return; }
+    const next = await allowed({ headers: { cookie } } as http.IncomingMessage, projectId);
+    if (activeSockets.get(socket)?.timer !== timer) return;
+    if (!next || next.sessionId !== identity.sessionId) socket.destroy();
+    else remember({ socket, headers: { cookie } } as http.IncomingMessage, next, projectId);
+  }, Math.min(remaining, 60000));
+  timer.unref();
+  activeSockets.set(socket, { ...identity, projectId, timer });
+  if (!old) socket.once('close', () => {
+    clearTimeout(activeSockets.get(socket)?.timer);
+    activeSockets.delete(socket);
+  });
+  return true;
+}
+function previewOrigins(port: number) {
+  return [config.publicUrl, ...(process.env.ADDITIONAL_ORIGINS || '').split(',').filter(Boolean)].map((address) => {
+    const url = new URL(address); url.port = String(port); return url.origin;
+  });
 }
 async function allowed(request: http.IncomingMessage, id: string) {
+  const generation = authorizationGeneration;
   try {
     const response = await fetch(`${config.appUrl}/internal/authorize-preview`, {
       method: 'POST',
@@ -24,7 +53,8 @@ async function allowed(request: http.IncomingMessage, id: string) {
       body: JSON.stringify({ projectId: id, cookie: request.headers.cookie || '' }),
       signal: AbortSignal.timeout(5000),
     });
-    return response.ok ? ((await response.json()) as { userId: string }) : null;
+    const identity = response.ok ? ((await response.json()) as Identity) : null;
+    return generation === authorizationGeneration ? identity : null;
   } catch {
     return null;
   }
@@ -37,19 +67,15 @@ async function target(id: string, port: number) {
   if (!binding) throw new Error('Restart the workspace after changing its preview port');
   return `http://127.0.0.1:${binding.HostPort}`;
 }
-function cleanCookies(req: http.IncomingMessage) {
+function cleanCookies(req: http.IncomingMessage, id: string) {
   delete req.headers.authorization;
   delete req.headers['x-worker-token'];
-  req.headers.cookie = (req.headers.cookie || '')
-    .split(';')
-    .filter((c) => !c.trim().startsWith('repellet_session='))
-    .join(';');
-  if (!req.headers.cookie.trim()) delete req.headers.cookie;
+  req.headers.cookie = decodePreviewCookies(id, req.headers.cookie || '');
+  if (!req.headers.cookie) delete req.headers.cookie;
 }
-function sanitizeResponse(response: http.IncomingMessage) {
+function sanitizeResponse(response: http.IncomingMessage, id: string) {
   const cookies = response.headers['set-cookie'];
-  if (cookies)
-    response.headers['set-cookie'] = cookies.filter((c) => !/^\s*repellet_session\s*=/i.test(c));
+  if (cookies) response.headers['set-cookie'] = cookies.map((c) => encodePreviewCookie(id, c)).filter((c): c is string => c !== null);
   delete response.headers['clear-site-data'];
 }
 export function listPreviews() {
@@ -109,14 +135,14 @@ export async function enablePreview(id: string, targetPort: number, requested?: 
     );
   const proxy = httpProxy.createProxyServer({ ws: true, changeOrigin: false });
   proxy.on('proxyRes', (proxyRes) => {
-    sanitizeResponse(proxyRes);
+    sanitizeResponse(proxyRes, id);
     delete proxyRes.headers['x-frame-options'];
     proxyRes.headers['content-security-policy'] =
       `frame-ancestors ${new URL(config.publicUrl).origin} ${(process.env.ADDITIONAL_ORIGINS || '').split(',').filter(Boolean).join(' ')}`;
   });
   proxy.on('proxyReqWs', (request) => {
-    request.on('upgrade', sanitizeResponse);
-    request.on('response', sanitizeResponse);
+    request.on('upgrade', (response) => sanitizeResponse(response, id));
+    request.on('response', (response) => sanitizeResponse(response, id));
   });
   proxy.on('error', (_error, _req, res) => {
     if (res instanceof http.ServerResponse && !res.headersSent) {
@@ -127,15 +153,18 @@ export async function enablePreview(id: string, targetPort: number, requested?: 
     } else if ('destroy' in res) res.destroy();
   });
   const server = http.createServer(async (req, res) => {
+    if (!['GET', 'HEAD'].includes(req.method || '') && !previewOrigins(port).includes(req.headers.origin || '')) {
+      res.writeHead(403); res.end('Preview origin rejected'); return;
+    }
     const identity = await allowed(req, id);
     if (!identity) {
       res.writeHead(403, { 'content-type': 'text/plain' });
       res.end('Sign in to Repellet with a project member account to view this preview.');
       return;
     }
-    remember(req.socket, identity, id);
+    if (!remember(req, identity, id)) return;
     try {
-      cleanCookies(req);
+      cleanCookies(req, id);
       const destination = await target(id, targetPort);
       proxy.web(req, res, { target: destination, ignorePath: false });
     } catch {
@@ -144,14 +173,7 @@ export async function enablePreview(id: string, targetPort: number, requested?: 
     }
   });
   server.on('upgrade', async (req, socket, head) => {
-    const origins = [
-      config.publicUrl,
-      ...(process.env.ADDITIONAL_ORIGINS || '').split(',').filter(Boolean),
-    ].map((address) => {
-      const url = new URL(address);
-      url.port = String(port);
-      return url.origin;
-    });
+    const origins = previewOrigins(port);
     if (!req.headers.origin || !origins.includes(req.headers.origin)) {
       socket.write('HTTP/1.1 403 Forbidden\r\n\r\n');
       socket.destroy();
@@ -164,9 +186,9 @@ export async function enablePreview(id: string, targetPort: number, requested?: 
       socket.destroy();
       return;
     }
-    remember(socket as Socket, identity, id);
+    if (!remember(req, identity, id)) return;
     try {
-      cleanCookies(req);
+      cleanCookies(req, id);
       proxy.ws(req, socket as Socket, head, { target: await target(id, targetPort) });
     } catch {
       socket.destroy();
@@ -180,6 +202,7 @@ export async function enablePreview(id: string, targetPort: number, requested?: 
   return port;
 }
 export async function disablePreview(id: string) {
+  authorizationGeneration++;
   for (const [port, p] of previews)
     if (p.project === id) {
       for (const [socket, identity] of activeSockets)

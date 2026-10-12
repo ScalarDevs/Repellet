@@ -34,7 +34,8 @@ COPY --from=build /app/apps/worker ./apps/worker
 COPY packages/bridge /opt/workspace-context/packages/bridge
 COPY docker/agent-context /opt/workspace-context/docker/agent-context
 COPY tsconfig.base.json /opt/workspace-context/tsconfig.base.json
-COPY docker/pi-host.cjs docker/pi-session.cjs /opt/workspace-context/docker/
+COPY docker/pi-host.cjs docker/pi-session.cjs docker/provider-fetch.cjs /opt/workspace-context/docker/
+COPY docker/git-transport.cjs /opt/workspace-context/docker/
 COPY docker/pi-extensions /opt/workspace-context/docker/pi-extensions
 COPY docker/workspace.Dockerfile /opt/workspace-context/docker/workspace.Dockerfile
 EXPOSE 3002

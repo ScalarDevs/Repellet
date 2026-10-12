@@ -7,6 +7,7 @@ const fake = vi.hoisted(() => ({
     inDocker: true,
     publicUrl: 'https://night-mac.example.ts.net:3000',
     portRange: [42000, 42003],
+    token: 'preview-test-worker-secret'.repeat(2),
   },
   inspect: vi.fn(),
   request: vi.fn(),
@@ -34,7 +35,7 @@ vi.mock('http-proxy', () => ({
   default: { createProxyServer: fake.createProxyServer },
 }));
 
-import { enablePreview, disablePreview, probePreview } from '../apps/worker/src/previews.js';
+import { enablePreview, disablePreview, probePreview, revokePreview } from '../apps/worker/src/previews.js';
 
 type Request = EventEmitter & {
   end: ReturnType<typeof vi.fn>;
@@ -42,9 +43,11 @@ type Request = EventEmitter & {
 };
 const requests: Request[] = [];
 const responses: { statusCode: number; destroy: ReturnType<typeof vi.fn> }[] = [];
+let testEpoch = Date.UTC(2026, 0, 1);
 
 beforeEach(() => {
   vi.useFakeTimers();
+  vi.setSystemTime(testEpoch += 120000);
   requests.length = 0;
   responses.length = 0;
   fake.config.inDocker = true;
@@ -93,6 +96,55 @@ afterEach(async () => {
   await disablePreview('project');
   await disablePreview('other-project');
   vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+
+function gatewayRequest(method = 'GET', origin?: string) {
+  const socket = Object.assign(new EventEmitter(), { destroy: vi.fn(function(this: EventEmitter) { this.emit('close'); }) });
+  return { method, headers: { origin, cookie: 'repellet_session=test' }, socket } as unknown as http.IncomingMessage;
+}
+async function authenticatedGateway(expiresIn = 120000) {
+  const proxy = Object.assign(new EventEmitter(), { web: vi.fn(), ws: vi.fn() });
+  fake.createProxyServer.mockReturnValue(proxy);
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ userId: 'user', sessionId: 'session', expiresAt: new Date(Date.now() + expiresIn).toISOString() }))));
+  await enablePreview('project', 3000, 42001);
+  const handle = fake.createServer.mock.calls[0]![0] as (req: http.IncomingMessage, res: any) => Promise<void>;
+  return { proxy, handle, response: () => ({ writeHead: vi.fn(), end: vi.fn() }) };
+}
+it('rejects cross-port and missing-Origin writes while allowing exact-origin writes and navigation', async () => {
+  const { proxy, handle, response } = await authenticatedGateway();
+  for (const origin of [undefined, 'https://night-mac.example.ts.net:42002', 'null']) {
+    const res = response(); await handle(gatewayRequest('POST', origin), res);
+    expect(res.writeHead).toHaveBeenCalledWith(403);
+  }
+  expect(proxy.web).not.toHaveBeenCalled(); expect(fetch).not.toHaveBeenCalled();
+  await handle(gatewayRequest('POST', 'https://night-mac.example.ts.net:42001'), response());
+  await handle(gatewayRequest(), response());
+  expect(proxy.web).toHaveBeenCalledTimes(2);
+});
+it('closes only the authorizing session on logout and closes streams at expiry', async () => {
+  const { handle, response } = await authenticatedGateway(1000);
+  const req = gatewayRequest(); await handle(req, response());
+  await vi.advanceTimersByTimeAsync(999); expect(req.socket.destroy).not.toHaveBeenCalled();
+  await vi.advanceTimersByTimeAsync(1); expect(req.socket.destroy).toHaveBeenCalledOnce();
+  const another = gatewayRequest(); await handle(another, response());
+  revokePreview(undefined, undefined, 'unrelated'); expect(another.socket.destroy).not.toHaveBeenCalled();
+  revokePreview(undefined, undefined, 'session'); expect(another.socket.destroy).toHaveBeenCalledOnce();
+  expect(vi.getTimerCount()).toBe(0);
+});
+it('rejects authorization completing after a logout revocation and revalidates long streams', async () => {
+  const { handle, response, proxy } = await authenticatedGateway();
+  const request = gatewayRequest(); await handle(request, response());
+  vi.mocked(fetch).mockResolvedValue(new Response('{}', { status: 403 }));
+  await vi.advanceTimersByTimeAsync(60000);
+  expect(request.socket.destroy).toHaveBeenCalledOnce();
+  let complete!: (response: Response) => void;
+  vi.mocked(fetch).mockReturnValue(new Promise<Response>((resolve) => { complete = resolve; }));
+  const late = gatewayRequest(); const res = response(); const pending = handle(late, res);
+  revokePreview(undefined, undefined, 'revoked');
+  complete(new Response(JSON.stringify({ userId: 'user', sessionId: 'revoked', expiresAt: new Date(Date.now() + 10000).toISOString() })));
+  await pending;
+  expect(res.writeHead).toHaveBeenCalledWith(403, expect.any(Object)); expect(proxy.web).toHaveBeenCalledTimes(1);
 });
 
 it.each([true, false])(

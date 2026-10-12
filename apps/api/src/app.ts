@@ -26,6 +26,7 @@ import {
 import { attachDocument } from './collaboration.js';
 import { workerJson } from './worker.js';
 import { workspaceContext } from './workspaceContext.js';
+import { reserveLanguage } from './channel-budget.js';
 import { workspaceRoutes } from './workspaceRoutes.js';
 import { idempotencyHooks } from './idempotency.js';
 import { auditHooks } from './audit.js';
@@ -161,6 +162,8 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
   app.get('/ws/projects/:id/channel', { websocket: true }, async (ws, req) => {
     const pending: { data: Buffer; binary: boolean }[] = [];
     let upstream: WebSocket | undefined;
+    let releaseLanguage: (() => void) | undefined;
+    let pendingBytes = 0;
     let editable = false;
     let channel = '';
     const forward = (data: Buffer, binary: boolean) => {
@@ -183,10 +186,12 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
         }
       }
       if (upstream?.readyState === 1) upstream.send(data, { binary });
-      else if (pending.length < 30) pending.push({ data, binary });
+      else if (pending.length < 30 && pendingBytes + data.length <= 4 * 1024 * 1024) {
+        pending.push({ data, binary }); pendingBytes += data.length;
+      } else ws.close(1008, 'Channel input limit reached');
     };
     ws.on('message', (raw, binary) => forward(Buffer.from(raw as Buffer), binary));
-    ws.on('close', () => upstream?.close());
+    ws.on('close', () => { releaseLanguage?.(); upstream?.close(); });
     try {
       const user = await requireUser(req);
       const id = z
@@ -199,6 +204,10 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
       if (!/^\/(terminals\/[a-z0-9-]+\/connect|language\/(python|node|go|rust))$/.test(channel))
         throw new Error('Unsupported channel');
       editable = p.role !== 'viewer';
+      if (channel.startsWith('/language/') && !editable)
+        throw new Error('Language services require edit permission');
+      if (ws.readyState !== 1) return;
+      if (channel.startsWith('/language/')) releaseLanguage = reserveLanguage(user.id, id);
       track(ws, {
         userId: user.id,
         projectId: id,
@@ -214,6 +223,7 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
         if (channel.startsWith('/language/') && ws.readyState === 1)
           ws.send(JSON.stringify({ method: 'repellet/ready' }));
         for (const item of pending.splice(0)) forward(item.data, item.binary);
+        pendingBytes = 0;
       });
       upstream.on('message', (data, binary) => {
         if (ws.readyState === 1) ws.send(data, { binary });
@@ -221,6 +231,7 @@ export async function createApp(options: { static?: boolean; logger?: boolean } 
       upstream.on('error', () => ws.close(1011, 'Workspace channel unavailable'));
       upstream.on('close', () => ws.close());
     } catch (e) {
+      releaseLanguage?.();
       ws.close(1008, (e as Error).message.slice(0, 120));
     }
   });

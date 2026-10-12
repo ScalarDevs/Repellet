@@ -1,3 +1,4 @@
+import { providerBroker, brokerToken } from './provider-broker.js';
 import { PassThrough } from 'node:stream';
 import { docker, BASE_IMAGE } from '../images.js';
 import { containerName, volumeName, inspect, bridgeRequest } from '../workspaces.js';
@@ -42,8 +43,9 @@ export async function killProjectAgent(id: string) {
 }
 export async function startProjectProcess(
   id: string,
-  settings: AgentPrivateSettings,
+  settings: AgentPrivateSettings & { allowPrivateProvider?: boolean },
   tokens?: ChatgptAuthTokensRefreshResponse,
+  refreshTokens?: () => Promise<ChatgptAuthTokensRefreshResponse>,
 ) {
   if (!(await inspect(id))?.State.Running)
     throw Object.assign(new Error('Start the workspace to load agent conversations'), {
@@ -103,17 +105,17 @@ export async function startProjectProcess(
     ...(settings.effort ? { REPELLET_PI_EFFORT: settings.effort } : {}),
     ...(tokens
       ? {
-          REPELLET_CHATGPT_ACCESS_TOKEN: tokens.accessToken,
-          REPELLET_CHATGPT_ACCOUNT_ID: tokens.chatgptAccountId,
+          REPELLET_CHATGPT_ACCESS_TOKEN: brokerToken,
+          REPELLET_CHATGPT_ACCOUNT_ID: 'repellet-broker',
         }
       : {}),
     ...(base.RUSTUP_HOME
       ? { RUSTUP_HOME: base.RUSTUP_HOME, CARGO_HOME: '/home/agent/.cargo' }
       : {}),
     BRIDGE_TOKEN: '',
-    ...(settings.apiKey ? { REPELLET_AGENT_API_KEY: settings.apiKey } : {}),
+    ...(settings.apiKey ? { REPELLET_AGENT_API_KEY: 'repellet-broker' } : {}),
   };
-  // Docker's Exec API carries the key in Env, never in command arguments or a shared file.
+  // Only inert provider placeholders enter the project process. The worker owns real credentials.
   const execution = await container.exec({
     User: '1001:1000',
     WorkingDir: '/workspace',
@@ -130,18 +132,23 @@ export async function startProjectProcess(
   docker.modem.demuxStream(stream, output, errors);
   stream.on('end', () => output.end());
   stream.on('error', () => output.destroy(new Error('Docker exec disconnected')));
-  return new AgentConnection(
+  const broker = providerBroker(settings, tokens, refreshTokens);
+  const connection: AgentConnection = new AgentConnection(
     {
       input: stream,
       output,
       errors,
       close: async () => {
+        broker.close();
         stream.destroy();
         await killProjectAgent(id);
       },
     },
     [settings.apiKey, tokens?.accessToken].filter((value): value is string => !!value),
+    (message) => broker.intercept(connection, message),
+    broker.transform,
   );
+  return connection;
 }
 export async function projectAgentBytes(id: string) {
   // Bridge cannot enter the private home. Measure as the agent via an internal Docker operation.

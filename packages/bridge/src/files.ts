@@ -3,7 +3,10 @@ import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
-export const exec = promisify(execFile);
+import { projectEnvironment, projectIdentity } from './process-security.js';
+const execute = promisify(execFile);
+export const exec: typeof execute = ((command: string, args: string[], options: import('node:child_process').ExecFileOptions = {}) =>
+  execute(command, args, { ...options, ...projectIdentity(), env: projectEnvironment((options as { env?: NodeJS.ProcessEnv }).env) })) as typeof execute;
 export const root = process.env.WORKSPACE_ROOT || '/workspace';
 export function relative(input: string): string {
   if (
@@ -42,8 +45,14 @@ export async function resolvePath(input: string, allowMissing = false): Promise<
 }
 export const hash = (content: Buffer | string) =>
   createHash('sha256').update(content).digest('hex');
-export async function readFile(input: string) {
+export async function readFile(input: string, collaborative = false) {
   const p = await resolvePath(input);
+  if (collaborative) {
+    const real = await fs.realpath(p);
+    const realRoot = await fs.realpath(root);
+    if (real !== path.join(realRoot, relative(input)))
+      throw Object.assign(new Error('Collaborative files cannot use symlink aliases'), { statusCode: 400 });
+  }
   try {
     const stat = await fs.stat(p);
     if (!stat.isFile()) throw Object.assign(new Error('Not a file'), { statusCode: 400 });
@@ -245,7 +254,7 @@ export async function matchingFiles(query: string): Promise<string[]> {
         query,
         '.',
       ],
-      { cwd: root },
+      { cwd: root, ...projectIdentity(), env: projectEnvironment() },
     );
     const names: string[] = [];
     let remainder = Buffer.alloc(0),

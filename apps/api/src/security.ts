@@ -66,12 +66,18 @@ export async function requireUser(req: FastifyRequest) {
       statusCode: 401,
       code: 'SESSION_UNAUTHORIZED',
     });
+  const context = workspaceContext.getStore();
+  if (context) {
+    context.authorizations ||= new Map();
+    context.authorizations.set('session', () => requireUser(req));
+  }
   return user;
 }
 export async function requireOwner(req: FastifyRequest) {
   const user = await requireUser(req);
   if (!user.isOwner)
     throw Object.assign(new Error('Site owner access required'), { statusCode: 403 });
+  workspaceContext.getStore()?.authorizations?.set('site-owner', () => requireOwner(req));
   return user;
 }
 export async function projectAccess(
@@ -97,6 +103,13 @@ export async function projectAccess(
   if (context) {
     context.projectId = id;
     context.actor = { id: user.id, name: user.displayName, role };
+    context.authorizations ||= new Map();
+    context.authorizations.set(`project:${id}:${mode}`, async () => {
+      const [current] = await db.select().from(users).where(eq(users.id, user.id));
+      if (!current?.enabled)
+        throw Object.assign(new Error('Sign in to continue'), { statusCode: 401 });
+      return projectAccess(current, id, mode);
+    });
   }
   return { ...project, role };
 }
@@ -135,5 +148,10 @@ export async function projectAgentAccess(user: AuthUser, id: string, requireRunn
     throw Object.assign(new Error('Start the workspace to load agent conversations'), {
       statusCode: 409,
     });
+  const context = workspaceContext.getStore();
+  if (context) {
+    context.authorizations ||= new Map();
+    context.authorizations.set(`agent-owner:${id}`, () => projectAgentAccess(user, id, requireRunning));
+  }
   return project;
 }
