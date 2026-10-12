@@ -1,5 +1,6 @@
 import { Readable } from 'node:stream';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+vi.mock('node:os', () => ({ hostname: () => 'test-worker' }));
 
 const state = vi.hoisted(() => ({
   workspace: null as any,
@@ -47,10 +48,10 @@ vi.mock('../apps/worker/src/images.js', () => {
     BASE_IMAGE: 'test-base-image',
     ensureImage: vi.fn(async () => 'test-image'),
     docker: {
-      getNetwork: () => ({ inspect: async () => ({}) }),
+      getNetwork: () => ({ inspect: async () => ({}), connect: vi.fn(async () => {}) }),
       getImage: () => ({ inspect: async () => ({ Id: 'image-id' }) }),
       getVolume: () => ({ inspect: async () => ({}) }),
-      getContainer: () => container,
+      getContainer: (name: string) => name === 'test-worker' ? { inspect: async () => ({ NetworkSettings: { Networks: {} } }) } : container,
       createContainer: async (options: any) => {
         // Docker copies image directory metadata into empty volumes at container
         // creation, even when a persistent migration marker already exists.
@@ -63,6 +64,8 @@ vi.mock('../apps/worker/src/images.js', () => {
             Id: 'container-id',
             Image: 'image-id',
             State: { Running: false },
+            HostConfig: options.HostConfig,
+            Config: { User: options.User },
             Mounts: options.HostConfig.Mounts.map((mount: any) => ({
               Destination: mount.Target,
             })),
@@ -128,6 +131,8 @@ function existingWorkspace(running = false) {
     Id: 'container-id',
     Image: 'image-id',
     State: { Running: running },
+    HostConfig: { NetworkMode: 'test-network-project' },
+    Config: { User: '0:0' },
     Mounts: [{ Destination: '/home/agent' }, { Destination: '/home/agent/attachments' }],
   };
 }

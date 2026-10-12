@@ -42,6 +42,7 @@ vi.mock('../apps/worker/src/images.js', () => ({
 
 import { startProjectProcess } from '../apps/worker/src/agent/process.js';
 import { installManagedAgentContext } from '../apps/worker/src/agent-context.js';
+import { brokerToken } from '../apps/worker/src/agent/provider-broker.js';
 
 beforeEach(() => {
   state.helpers.length = 0;
@@ -112,11 +113,12 @@ it('supplies both providers privately even when ChatGPT is the default API', asy
   expect(exec.Env).toEqual(
     expect.arrayContaining([
       'REPELLET_PI_PROVIDER=openai-codex',
-      'REPELLET_AGENT_API_KEY=global-private-key',
-      'REPELLET_CHATGPT_ACCESS_TOKEN=chatgpt-private-token',
+      'REPELLET_AGENT_API_KEY=repellet-broker',
+      `REPELLET_CHATGPT_ACCESS_TOKEN=${brokerToken}`,
       'REPELLET_PI_MODELS=["allowed","other"]',
     ]),
   );
   expect(exec.Cmd.join(' ')).not.toMatch(/global-private-key|chatgpt-private-token/);
+  expect(exec.Env.join(' ')).not.toMatch(/global-private-key|chatgpt-private-token/);
   await connection.close();
 });

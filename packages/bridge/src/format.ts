@@ -2,6 +2,7 @@ import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { relative, root } from './files.js';
 import { getEnvironment } from './terminals.js';
+import { projectIdentity } from './process-security.js';
 /** Format the supplied editor revision; never read or mutate the disk file. */
 export async function formatFile(input: string, content: string) {
   const filename = relative(input);
@@ -37,7 +38,7 @@ export async function formatFile(input: string, content: string) {
       statusCode: 400,
     });
   return new Promise<{ content: string }>((resolve, reject) => {
-    const child = spawn(command, args, { cwd: root, env: getEnvironment(), stdio: 'pipe' });
+    const child = spawn(command, args, { ...projectIdentity(), cwd: root, env: getEnvironment(), stdio: 'pipe' });
     let output = '',
       errors = '',
       done = false;

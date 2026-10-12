@@ -1,3 +1,4 @@
+import { providerFetch } from '../provider-fetch.js';
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
@@ -105,16 +106,16 @@ export async function publicGlobalSettings(): Promise<GlobalAgentApiSettings> {
 export async function discoverModels(connection: {
   baseUrl: string;
   apiKey: string | null;
-}): Promise<Snapshot> {
+}, allowPrivate = false): Promise<Snapshot> {
   proxyConnectionSchema.parse({ baseUrl: connection.baseUrl, apiKey: connection.apiKey });
   if (!connection.baseUrl || !connection.apiKey)
     throw fail('A Responses API base URL and key are required');
   try {
-    const response = await fetch(connection.baseUrl.replace(/\/+$/, '') + '/models', {
+    const response = await providerFetch(connection.baseUrl.replace(/\/+$/, '') + '/models', {
       headers: { authorization: `Bearer ${connection.apiKey}` },
       redirect: 'error',
       signal: AbortSignal.timeout(10000),
-    });
+    }, allowPrivate);
     if (!response.ok) throw fail(`Model discovery failed (HTTP ${response.status})`);
     // Do not buffer an unbounded upstream response or expose upstream error bodies.
     const reader = response.body?.getReader();
@@ -153,7 +154,7 @@ export async function previewGlobalModels(input: unknown) {
     baseUrl: draft.baseUrl,
     apiKey: draft.apiKey === undefined ? previous.apiKey : draft.apiKey,
   };
-  const catalog = await discoverModels(connection);
+  const catalog = await discoverModels(connection, true);
   globalDrafts.set(connectionFingerprint(connection), catalog);
   if (globalDrafts.size > 32) globalDrafts.delete(globalDrafts.keys().next().value!);
   return { models: catalog.models, fetchedAt: catalog.fetchedAt };
@@ -191,7 +192,7 @@ export async function saveGlobalSettings(input: unknown) {
   const freshDraft = draft && Date.now() - draft.fetchedAt < TTL ? draft : null;
   let catalog = freshDraft || (connectionChanged ? null : previous.catalog);
   if (update.enabled && !freshDraft && (!previous.enabled || connectionChanged || !catalog))
-    catalog = await discoverModels({ baseUrl: update.baseUrl, apiKey: key });
+    catalog = await discoverModels({ baseUrl: update.baseUrl, apiKey: key }, true);
   const allowedModels = [...new Set(update.allowedModels)].sort();
   if (
     update.enabled &&
@@ -199,7 +200,7 @@ export async function saveGlobalSettings(input: unknown) {
       (id) => !catalog?.models.includes(id) && !previous.allowedModels.includes(id),
     )
   )
-    catalog = await discoverModels({ baseUrl: update.baseUrl, apiKey: key });
+    catalog = await discoverModels({ baseUrl: update.baseUrl, apiKey: key }, true);
   const unknown = allowedModels.filter(
     (id) => !catalog?.models.includes(id) && !previous.allowedModels.includes(id),
   );
@@ -274,7 +275,7 @@ async function proxyCatalog(id: string, preferences: AgentStoredSettings, refres
   let error: string | null = null;
   if (refresh || !cached || Date.now() - cached.fetchedAt >= TTL) {
     try {
-      const next = await discoverModels(connection);
+      const next = await discoverModels(connection, global.enabled);
       if (global.enabled) {
         if (JSON.stringify(next.models) !== JSON.stringify(cached?.models))
           global.revision = randomUUID();
@@ -397,7 +398,7 @@ export async function validatePreferences(id: string, preferences: AgentStoredSe
       throw fail('The default reasoning effort is unavailable for this model.');
   }
 }
-export async function runtimeSettings(id: string): Promise<AgentPrivateSettings> {
+export async function runtimeSettings(id: string): Promise<AgentPrivateSettings & { allowPrivateProvider: boolean }> {
   const preferences = await storedSettings(id),
     global = await globalSettings();
   const connection = global.enabled ? global : preferences.personalProxy;
@@ -409,5 +410,6 @@ export async function runtimeSettings(id: string): Promise<AgentPrivateSettings>
     ...preferences.defaults[preferences.defaultApi],
     defaults: preferences.defaults,
     proxyModels: catalog.models,
+    allowPrivateProvider: global.enabled,
   };
 }

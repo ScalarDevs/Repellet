@@ -47,6 +47,9 @@ let runtime,
 const sessions = new Map(),
   pending = new Map();
 const request = h.createRequest(pending, emit, notify);
+const providerFetchModule = require('./provider-fetch.cjs') || {};
+const providerFetch = (providerFetchModule.createProviderFetch || ((request, notify, originalFetch) => ({ fetch: originalFetch, chunk: () => {} })))(request, notify, globalThis.fetch, baseUrl);
+globalThis.fetch = providerFetch.fetch;
 function expiry(token) {
   try {
     return JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString()).exp * 1000;
@@ -166,7 +169,7 @@ function thread(e, turns = []) {
 async function load(id, selection = {}) {
   if (!sessions.has(id)) {
     const m = manager(id),
-      settings = api.SettingsManager.inMemory({ retry: { enabled: false } });
+      settings = api.SettingsManager.inMemory({ retry: { enabled: false }, transport: 'sse' });
     const eventBus = api.createEventBus();
     eventBus.on(
       'repellet:project-control',
@@ -452,6 +455,7 @@ async function run(id, params) {
   return { turn };
 }
 async function handle({ method, params = {} }) {
+  if (method === 'repellet/provider/chunk') { providerFetch.chunk(params); return; }
   if (method === 'initialize' || method === 'initialized')
     return { protocol: 'repellet-agent', provider: 'pi', version: '1.1.0', apiSelection: true };
   if (method === 'account/login/start') {

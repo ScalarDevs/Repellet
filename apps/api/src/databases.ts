@@ -185,7 +185,7 @@ export async function operateDatabase(
     if (
       project?.storageExceeded &&
       write &&
-      !['delete', 'drop', 'drop_column', 'execute_sql', 'execute_mongo'].includes(
+      !['delete', 'drop', 'drop_column'].includes(
         operation.operation,
       )
     )

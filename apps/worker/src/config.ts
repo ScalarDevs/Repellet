@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import { createHmac, timingSafeEqual } from 'node:crypto';
 dotenv.config({ path: fileURLToPath(new URL('../../../.env', import.meta.url)), quiet: true });
 export const config = {
-  token: process.env.WORKER_TOKEN || '',
+  token: process.env.WORKER_TOKEN || (process.env.NODE_ENV === 'test' ? 'test-worker-token-'.repeat(3) : ''),
   port: Number(process.env.WORKER_PORT || 3002),
   network: process.env.DOCKER_NETWORK || 'repellet-workspaces',
   inDocker: process.env.WORKER_IN_DOCKER === 'true',

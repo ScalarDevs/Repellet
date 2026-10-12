@@ -4,6 +4,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { resolvePath } from './files.js';
 import { getEnvironment } from './terminals.js';
+import { projectIdentity } from './process-security.js';
 type ProcessJob = {
   id: string;
   state: 'running' | 'succeeded' | 'failed' | 'cancelled';
@@ -35,6 +36,7 @@ export async function startPreparation(id: string, command: string, cwd: string)
     throw Object.assign(new Error('Preparation already running'), { statusCode: 409 });
   for (const [key, job] of jobs) if (job.state !== 'running') jobs.delete(key);
   const child = spawn('/bin/bash', ['--noprofile', '--norc', '-c', command], {
+    ...projectIdentity(),
     cwd: await resolvePath(cwd),
     env: getEnvironment(),
     detached: true,

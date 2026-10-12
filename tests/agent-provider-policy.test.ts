@@ -1,6 +1,7 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { randomUUID } from 'node:crypto';
+vi.mock('../apps/worker/src/provider-fetch.js', () => ({ providerFetch: (url: string, options: RequestInit) => fetch(url, options) }));
 import type { AgentStoredSettings } from '@repellet/shared';
 const state = vi.hoisted(() => ({
   files: new Map<string, string>(),

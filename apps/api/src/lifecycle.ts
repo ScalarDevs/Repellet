@@ -23,6 +23,7 @@ import {
   mainRunProcessIds,
 } from './preparation.js';
 import { WorkspaceQueue } from './workspaceQueue.js';
+import { authorizedOperation } from './workspaceContext.js';
 import {
   autoStartProfiles,
   recordProcess,
@@ -32,7 +33,7 @@ import {
 const operations = new WorkspaceQueue();
 const watchers = new Map<string, WebSocket>();
 export async function serialize<T>(id: string, fn: () => Promise<T>): Promise<T> {
-  return operations.run(id, fn);
+  return operations.run(id, authorizedOperation(fn));
 }
 export async function limits() {
   const [row] = await db.select().from(installation).where(eq(installation.id, 1));

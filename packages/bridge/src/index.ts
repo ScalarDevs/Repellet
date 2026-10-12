@@ -1,10 +1,10 @@
+import { exportGit, importGit } from './git-transfer.js';
 import { databaseOperation } from './database.js';
 import Fastify from 'fastify';
 import websocket from '@fastify/websocket';
 import chokidar from 'chokidar';
 import { promises as fs, createReadStream } from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { timingSafeEqual } from 'node:crypto';
 import tar from 'tar-stream';
 import type { WebSocket } from 'ws';
@@ -105,7 +105,7 @@ app.get('/files', async (req) =>
   listFiles(String((req.query as Record<string, string>).path || '')),
 );
 app.get('/file-index', async () => fileIndex());
-app.get('/file', async (req) => readFile(String((req.query as Record<string, string>).path || '')));
+app.get('/file', async (req) => readFile(String((req.query as Record<string, string>).path || ''), (req.query as Record<string, string>).collaborative === 'true'));
 app.put('/file', async (req) => {
   const b = req.body as { path: string; content: string; expectedHash?: string | null };
   if (typeof b.content !== 'string')
@@ -316,12 +316,19 @@ app.put('/environment', async (req) => {
   return { ok: true };
 });
 app.put('/limits', async (req) => {
-  storageLimit = (req.body as { storageMb: number }).storageMb * 1024 * 1024;
+  const value = (req.body as { storageMb?: unknown })?.storageMb;
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 128 || value > 1048576)
+    throw Object.assign(new Error('Invalid storage limit'), { statusCode: 400 });
+  storageLimit = value * 1024 * 1024;
   return { ok: true };
 });
 app.get('/language/:runtime', { websocket: true }, (ws, req) => {
   if (suspended) {
     ws.close(1008, 'Storage limit exceeded');
+    return;
+  }
+  if (req.headers['x-repellet-readonly'] === 'true') {
+    ws.close(1008, 'Language services require edit permission');
     return;
   }
   attachLanguage(ws, (req.params as { runtime: string }).runtime);
@@ -470,6 +477,8 @@ app.get('/git/diff', async (req) => {
   const b = req.query as { path?: string; staged?: string };
   return gitDiff(b.path, b.staged === 'true');
 });
+app.post('/git/export', async (req) => exportGit((req.body as { remote: string }).remote));
+app.post('/git/import', { bodyLimit: 180 * 1024 * 1024 }, async (req) => importGit(req.body as { action: string; remote: string; bundle: string }));
 app.post('/git', async (req) => {
   if (suspended) throw Object.assign(new Error('Storage limit exceeded'), { statusCode: 507 });
   const b = req.body as {
@@ -542,102 +551,7 @@ app.post('/git', async (req) => {
       throw Object.assign(new Error('Unknown Git action'), { statusCode: 400 });
   }
   let result;
-  if (b.credential && ['clone', 'pull', 'push'].includes(b.action)) {
-    const remote = b.credential.remote;
-    const url = new URL(remote);
-    if (
-      url.protocol !== 'https:' ||
-      url.hostname !== 'github.com' ||
-      url.port ||
-      url.username ||
-      url.password ||
-      url.search ||
-      url.hash ||
-      !/^\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\.git$/.test(url.pathname)
-    )
-      throw new Error('Invalid credential target');
-    if (b.action === 'clone') {
-      if (b.url !== remote) throw new Error('Clone target changed');
-      const status = await git(['rev-parse', '--is-inside-work-tree'])
-        .then(() => true)
-        .catch(() => false);
-      if (status) {
-        const existing = (await git(['remote', 'get-url', 'origin'])).stdout.trim();
-        if (existing === remote) return { output: 'Repository already cloned' };
-        throw new Error('Workspace already has a different repository');
-      }
-    } else {
-      for (const push of [false, true]) {
-        const actual = (
-          await git(['remote', 'get-url', ...(push ? ['--push'] : []), '--all', 'origin'])
-        ).stdout.trim();
-        if (actual !== remote)
-          throw new Error(
-            'Origin remote changed. Reconnect the matching repository in settings before using credentials.',
-          );
-      }
-      if (b.action === 'pull') args = ['pull', '--ff-only', 'origin'];
-      else {
-        const branch = (await git(['branch', '--show-current'])).stdout.trim();
-        if (!branch) throw new Error('Switch to a branch before pushing');
-        args = ['push', '--set-upstream', 'origin', branch];
-      }
-    }
-    const quote = (v: string) => "'" + v.replaceAll("'", "'\"'\"'") + "'";
-    const helper =
-      '!' +
-      quote(process.execPath) +
-      ' ' +
-      quote(fileURLToPath(new URL('./credentials.js', import.meta.url)));
-    const env = {
-      ...process.env,
-      GIT_TERMINAL_PROMPT: '0',
-      GIT_ASKPASS: '/bin/false',
-      REPELLET_GIT_TOKEN: b.credential.token,
-      REPELLET_GIT_REMOTE: remote,
-    };
-    for (const key of Object.keys(env))
-      if (/^GIT_TRACE|^GIT_CURL_VERBOSE|^GIT_CONFIG/.test(key))
-        delete (env as Record<string, string | undefined>)[key];
-    const redact = (value: string) =>
-      value
-        .replaceAll(b.credential!.token, '[redacted]')
-        .replaceAll(encodeURIComponent(b.credential!.token), '[redacted]');
-    try {
-      result = await exec(
-        'git',
-        [
-          '-c',
-          'credential.helper=',
-          '-c',
-          `credential.helper=${helper}`,
-          '-c',
-          'credential.useHttpPath=true',
-          '-c',
-          'http.followRedirects=false',
-          '-c',
-          'http.extraHeader=',
-          '-c',
-          `credential.${remote}.helper=`,
-          '-c',
-          `credential.${remote}.helper=${helper}`,
-          '-c',
-          `http.${remote}.followRedirects=false`,
-          '-c',
-          `http.${remote}.extraHeader=`,
-          '-c',
-          `http.${remote}.sslVerify=true`,
-          '-c',
-          'core.hooksPath=/dev/null',
-          ...args,
-        ],
-        { cwd: root, env, maxBuffer: 8 * 1024 * 1024, timeout: 120000 },
-      );
-    } catch (e) {
-      throw new Error(redact((e as Error).message));
-    }
-    return { output: redact(result.stdout + result.stderr) };
-  }
+  if (b.credential) throw new Error('Authenticated Git must use isolated transport');
   result = await git(args);
   return { output: result.stdout + result.stderr };
 });

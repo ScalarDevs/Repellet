@@ -65,7 +65,10 @@ describe.skipIf(!enabled)('real Docker workspace integration', () => {
   });
   it('combines Python and Node in a non-root, limited container', async () => {
     const state = await worker.inspect(id);
-    expect(state!.Config.User).toBe('1000:1000');
+    // The bridge starts as a tiny UID-1002 supervisor and drops project
+    // subprocesses to UID 1000; the container itself needs root only for that
+    // one-time setpriv transition.
+    expect(state!.Config.User).toBe('0:0');
     expect(state!.HostConfig.Privileged).toBe(false);
     expect(state!.HostConfig.CapDrop).toContain('ALL');
     expect(state!.HostConfig.PidsLimit).toBe(512);

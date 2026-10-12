@@ -76,6 +76,7 @@ import {
   cancelReadiness,
 } from './preparation.js';
 import { validateRepository, userToken, githubIdentity } from './github.js';
+import { workspaceContext } from './workspaceContext.js';
 export function idFrom(req: FastifyRequest) {
   return z
     .string()
@@ -94,6 +95,7 @@ async function pauseTarget(req: FastifyRequest) {
     throw Object.assign(new Error('Only the project owner or site owner may pause it'), {
       statusCode: 403,
     });
+  workspaceContext.getStore()?.authorizations?.set('pause-owner', () => pauseTarget(req));
   return project;
 }
 const viewProject = async (
@@ -162,6 +164,7 @@ export async function routes(app: FastifyInstance) {
     if (token) {
       await db.delete(sessions).where(eq(sessions.tokenHash, tokenHash(token)));
       revokeToken(token);
+      await workerJson('/revoke', 'POST', { sessionId: tokenHash(token) }).catch(() => {});
     }
     reply.clearCookie(SESSION_COOKIE, { path: '/' });
     return { ok: true };
@@ -904,7 +907,9 @@ export async function routes(app: FastifyInstance) {
     if (p.state !== 'running')
       throw Object.assign(new Error('Workspace stopped'), { statusCode: 409 });
     await db.update(projects).set({ lastActiveAt: new Date() }).where(eq(projects.id, p.id));
-    return { userId: user.id };
+    const [session] = await db.select({ expiresAt: sessions.expiresAt }).from(sessions).where(eq(sessions.tokenHash, tokenHash(cookies[SESSION_COOKIE]!)));
+    if (!session || session.expiresAt.getTime() <= Date.now()) throw Object.assign(new Error('Unauthorized'), { statusCode: 401 });
+    return { userId: user.id, sessionId: tokenHash(cookies[SESSION_COOKIE]!), expiresAt: session.expiresAt.toISOString() };
   });
   app.post('/internal/maintenance', async (req) => {
     if (!tokenMatches(req.headers.authorization?.replace(/^Bearer /, '') || '', config.workerToken))
